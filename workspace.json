@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "projects": {
+    "stripe-test": {
+      "root": "apps/stripe-test",
+      "sourceRoot": "apps/stripe-test/src",
+      "projectType": "application",
+      "targets": {
+        "build": {
+          "executor": "@nrwl/node:build",
+          "outputs": ["{options.outputPath}"],
+          "options": {
+            "outputPath": "dist/apps/stripe-test",
+            "main": "apps/stripe-test/src/main.ts",
+            "tsConfig": "apps/stripe-test/tsconfig.app.json",
+            "assets": ["apps/stripe-test/src/assets"]
+          },
+          "configurations": {
+            "production": {
+              "optimization": true,
+              "extractLicenses": true,
+              "inspect": false,
+              "fileReplacements": [
+                {
+                  "replace": "apps/stripe-test/src/environments/environment.ts",
+                  "with": "apps/stripe-test/src/environments/environment.prod.ts"
+                }
+              ]
+            }
+          }
+        },
+        "serve": {
+          "executor": "@nrwl/node:execute",
+          "options": {
+            "buildTarget": "stripe-test:build"
+          }
+        },
+        "lint": {
+          "executor": "@nrwl/linter:eslint",
+          "options": {
+            "lintFilePatterns": ["apps/stripe-test/**/*.ts"]
+          }
+        },
+        "test": {
+          "executor": "@nrwl/jest:jest",
+          "outputs": ["coverage/apps/stripe-test"],
+          "options": {
+            "jestConfig": "apps/stripe-test/jest.config.js",
+            "passWithNoTests": true
+          }
+        }
+      }
+    }
+  },
+  "cli": {
+    "defaultCollection": "@nrwl/nest"
+  },
+  "defaultProject": "stripe-test"
+}
