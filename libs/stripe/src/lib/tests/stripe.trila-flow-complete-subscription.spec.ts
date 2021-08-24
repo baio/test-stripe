@@ -2,11 +2,11 @@ import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
 import { createStripeConfig } from './utils';
 
-const TEST_EMAIL = 'trial_flow_subscription@gmail.com';
+const TEST_EMAIL = 'trial_flow_complete_subscription@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_TRIAL_PERIOD = 30 * 24 * 60 * 60;
 
-xdescribe('StripeTrialFlowSubscription', () => {
+describe('StripeTrialFlowCompleteSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -56,24 +56,6 @@ xdescribe('StripeTrialFlowSubscription', () => {
     subscriptionId = res.id;
   });
 
-  it('set 5 secondary locations', async () => {
-    const res = await service.updateSubscriptionSecondaryQuantity(
-      subscriptionId,
-      5
-    );
-    expect(res).toBeDefined();
-    expect(res.id).toBeDefined();
-  });
-
-  it('set 3 secondary locations', async () => {
-    const res = await service.updateSubscriptionSecondaryQuantity(
-      subscriptionId,
-      3
-    );
-    expect(res).toBeDefined();
-    expect(res.id).toBeDefined();
-  });
-
   it('set 4 secondary locations', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
@@ -81,6 +63,12 @@ xdescribe('StripeTrialFlowSubscription', () => {
     );
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
+  });
+
+  it('end trial now', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    service.subscriptionTrialEndNow(subscriptionId);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   });
 
   it('get subscription', async () => {
