@@ -6,7 +6,7 @@ const TEST_EMAIL = 'trial_month_subscription_incomplete@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_TRIAL_PERIOD = 30 * 24 * 60 * 60;
 
-describe('StripeTrialMonthInCompleteSubscription', () => {
+xdescribe('StripeTrialMonthInCompleteSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -44,7 +44,6 @@ describe('StripeTrialMonthInCompleteSubscription', () => {
       TEST_PAYMENT_METHOD_ID
     );
     expect(res).toBeDefined();
-    console.log('222', res);
   });
 
   it('add main monthly subscription', async () => {
@@ -52,19 +51,17 @@ describe('StripeTrialMonthInCompleteSubscription', () => {
       customerId,
       SubscriptionPeriod.Month
     );
-    console.log('333', res);
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
     subscriptionId = res.id;
   });
 
-  it('get logs', async () => {
-    // No payments !!!
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const res = await service.getLatestEvents(12);
-    console.log('444', res);
+  it('get subscription', async () => {
+    const res = await service.getSubscription(subscriptionId);
     expect(res).toBeDefined();
-    expect(res.data).toHaveLength(12);
+    expect(res.id).toBeDefined();
+
+    console.log('555', res.items.data[0]);
   });
 
   xit('remove customer', async () => {
