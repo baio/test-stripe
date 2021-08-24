@@ -92,6 +92,27 @@ export class StripeService {
     return this.stripe.subscriptions.create(data);
   }
 
+  async updateSubscriptionSecondaryQuantity(
+    subscriptionId: string,
+    count: number
+  ) {
+    if (count < 0) {
+      throw new Error('Bad quantity');
+    }
+    const subscription = await this.getSubscription(subscriptionId);
+    const itemId = subscription.items.data[0].id;
+    const priceId = subscription.items.data[0].price.id;
+    return this.stripe.subscriptions.update(subscriptionId, {
+      items: [
+        {
+          id: itemId,
+          price: priceId,
+          quantity: count + 1,
+        },
+      ],
+    });
+  }
+
   getSubscription(subscriptionId: string) {
     return this.stripe.subscriptions.retrieve(subscriptionId);
   }
