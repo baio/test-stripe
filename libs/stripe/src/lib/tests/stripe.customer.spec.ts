@@ -31,6 +31,10 @@ xdescribe('StripeCustomer', () => {
                   },
                 },
               },
+              subscription: {
+                trialPeriodInSeconds: 0,
+                gracePeriodInSeconds: 0,
+              },
             }),
         },
       ],

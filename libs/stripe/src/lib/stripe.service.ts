@@ -16,10 +16,16 @@ export interface ProductsConfig {
   locationProduct: ProductConfig;
 }
 
+export interface SubscriptionConfig {
+  trialPeriodInSeconds: number;
+  gracePeriodInSeconds: number;
+}
+
 export interface StripeConfig {
   apiKey: string;
   apiVersion: string;
   products: ProductsConfig;
+  subscription: SubscriptionConfig;
 }
 
 export enum SubscriptionPeriod {
@@ -66,7 +72,12 @@ export class StripeService {
   }
 
   createMainSubscription(customerId: string, period: SubscriptionPeriod) {
+    const trialEnd =
+      this.config.subscription.trialPeriodInSeconds !== 0
+        ? new Date().getTime() + this.config.subscription.trialPeriodInSeconds
+        : undefined;
     const data: Stripe.SubscriptionCreateParams = {
+      trial_end: trialEnd,
       customer: customerId,
       items: [
         {

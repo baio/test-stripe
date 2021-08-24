@@ -32,6 +32,10 @@ describe('StripeMainSubscription', () => {
                   },
                 },
               },
+              subscription: {
+                trialPeriodInSeconds: 0,
+                gracePeriodInSeconds: 0,
+              },
             }),
         },
       ],
