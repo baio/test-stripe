@@ -68,6 +68,13 @@ describe('StripeMainSubscription', () => {
     expect(res.id).toBeDefined();
   });
 
+  it('read customer events', async () => {
+    const res = await service.getLatestEvents(12);
+    console.log('444', res);
+    expect(res).toBeDefined();
+    expect(res.data).toHaveLength(12);
+  });
+
   it('remove customer', async () => {
     const res = await service.removeCustomer(customerId);
     expect(res).toBeDefined();

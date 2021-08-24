@@ -77,4 +77,8 @@ export class StripeService {
     };
     return this.stripe.subscriptions.create(data);
   }
+
+  getLatestEvents(limit: number) {
+    return this.stripe.events.list({ limit });
+  }
 }
