@@ -1,6 +1,27 @@
 {
   "version": 2,
   "projects": {
+    "stripe": {
+      "root": "libs/stripe",
+      "sourceRoot": "libs/stripe/src",
+      "projectType": "library",
+      "targets": {
+        "lint": {
+          "executor": "@nrwl/linter:eslint",
+          "options": {
+            "lintFilePatterns": ["libs/stripe/**/*.ts"]
+          }
+        },
+        "test": {
+          "executor": "@nrwl/jest:jest",
+          "outputs": ["coverage/libs/stripe"],
+          "options": {
+            "jestConfig": "libs/stripe/jest.config.js",
+            "passWithNoTests": true
+          }
+        }
+      }
+    },
     "stripe-test": {
       "root": "apps/stripe-test",
       "sourceRoot": "apps/stripe-test/src",

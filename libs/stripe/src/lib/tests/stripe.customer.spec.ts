@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { StripeService } from './stripe.service';
+import { StripeService } from '../stripe.service';
 
 const TEST_EMAIL = 'max.putilov@gmail.com';
 
-xdescribe('StripeService', () => {
+xdescribe('StripeCustomer', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -39,7 +39,7 @@ xdescribe('StripeService', () => {
     service = app.get<StripeService>(StripeService);
   });
 
-  describe('Stripe subscription', () => {
+  describe('Stripe customer', () => {
     let customerId: string;
     it('create customer', async () => {
       const res = await service.createCustomer(TEST_EMAIL);
