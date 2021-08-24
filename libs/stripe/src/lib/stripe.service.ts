@@ -74,8 +74,12 @@ export class StripeService {
   createMainSubscription(customerId: string, period: SubscriptionPeriod) {
     const trialEnd =
       this.config.subscription.trialPeriodInSeconds !== 0
-        ? new Date().getTime() + this.config.subscription.trialPeriodInSeconds
+        ? Math.trunc(
+            new Date().getTime() / 1000 +
+              this.config.subscription.trialPeriodInSeconds
+          )
         : undefined;
+    console.log('+++', trialEnd);
     const data: Stripe.SubscriptionCreateParams = {
       trial_end: trialEnd,
       customer: customerId,
@@ -91,5 +95,11 @@ export class StripeService {
 
   getLatestEvents(limit: number) {
     return this.stripe.events.list({ limit });
+  }
+
+  subscriptionTrialEndNow(subscriptionId: string) {
+    return this.stripe.subscriptions.update(subscriptionId, {
+      trial_end: 'now',
+    });
   }
 }
