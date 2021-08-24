@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
+import { createStripeConfig } from './utils';
 
 const TEST_EMAIL = 'trial_month_subscription_incomplete@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
@@ -14,30 +15,12 @@ describe('StripeTrialMonthInCompleteSubscription', () => {
         {
           provide: StripeService,
           useFactory: () =>
-            new StripeService({
-              apiKey: 'sk_test_gERO5pQnIDoRzbaDZR6YmjUf',
-              apiVersion: '2020-08-27',
-              products: {
-                mainProduct: {
-                  id: 'prod_K5nP8b9VC7qkVL',
-                  prices: {
-                    yearlyPriceId: 'price_0JRboQdOpWxwtH1jit8rYhXC',
-                    monthlyPriceId: 'price_0JRboQdOpWxwtH1jWYwrsZuB',
-                  },
-                },
-                locationProduct: {
-                  id: 'prod_K5nPBdjSrT8arx',
-                  prices: {
-                    yearlyPriceId: 'price_0JRbp5dOpWxwtH1jCTnadg9w',
-                    monthlyPriceId: 'price_0JRbp5dOpWxwtH1jNWeUdONO',
-                  },
-                },
-              },
-              subscription: {
-                trialPeriodInSeconds: TEST_TRIAL_PERIOD,
+            new StripeService(
+              createStripeConfig({
                 gracePeriodInSeconds: 0,
-              },
-            }),
+                trialPeriodInSeconds: TEST_TRIAL_PERIOD,
+              })
+            ),
         },
       ],
     }).compile();
