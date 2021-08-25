@@ -26,3 +26,11 @@ export const createStripeConfig = (
   },
   subscription: subscriptionConfig,
 });
+
+export const addDays = (date: Date, days: number) => {
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+export const getDateTimestamp = (date: Date) =>
+  Math.floor(date.getTime() / 1000);

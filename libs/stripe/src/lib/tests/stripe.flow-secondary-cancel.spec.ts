@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
-import { createStripeConfig } from './utils';
+import { addDays, createStripeConfig, getDateTimestamp } from './utils';
 
 const TEST_EMAIL = 'flow_secondary_cancel@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
@@ -70,6 +70,17 @@ describe('StripeFlowSecondaryCancelSubscription', () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       2
+    );
+    expect(res).toBeDefined();
+    expect(res.id).toBeDefined();
+  });
+
+  it('decrease number of subscriptions once again after 4 days', async () => {
+    const fourDaysLater = addDays(new Date(), 4);
+    service.setCurrentTimeStamp(getDateTimestamp(fourDaysLater));
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      1
     );
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
