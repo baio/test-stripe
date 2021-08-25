@@ -74,6 +74,15 @@ xdescribe('StripeFlowSecondaryIncreaseSubscription', () => {
     expect(res.id).toBeDefined();
   });
 
+  it('increase number of subscriptions to 5', async () => {
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      5
+    );
+    expect(res).toBeDefined();
+    expect(res.id).toBeDefined();
+  });
+
   xit('remove customer', async () => {
     const res = await service.removeCustomer(customerId);
     expect(res).toBeDefined();

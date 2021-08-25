@@ -84,7 +84,7 @@ xdescribe('StripeTrialFlowSubscription', () => {
   });
 
   it('get subscription', async () => {
-    const res = await service.getSubscription(subscriptionId);
+    const res = await service.loadSubscription(subscriptionId);
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
 

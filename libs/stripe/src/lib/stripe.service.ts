@@ -63,7 +63,7 @@ export class StripeService {
   }
 
   getCurrentTimeStamp() {
-    return this.currentTimeStamp || new Date().getTime() / 1000;
+    return this.currentTimeStamp || Math.floor(new Date().getTime() / 1000);
   }
 
   async setCustomerPaymentMethod(customerId: string, paymentMethodId: string) {
@@ -85,10 +85,8 @@ export class StripeService {
   ) {
     const trialEnd =
       this.config.subscription.trialPeriodInSeconds !== 0
-        ? Math.trunc(
-            new Date().getTime() / 1000 +
-              this.config.subscription.trialPeriodInSeconds
-          )
+        ? this.getCurrentTimeStamp() +
+          this.config.subscription.trialPeriodInSeconds
         : undefined;
     const data: Stripe.SubscriptionCreateParams = {
       trial_end: trialEnd,
@@ -110,9 +108,9 @@ export class StripeService {
     if (count < 0) {
       throw new Error('Bad quantity');
     }
-    const subscription = await this.getSubscription(subscriptionId);
+    const subscription = await this.loadSubscription(subscriptionId);
 
-    console.log(JSON.stringify(subscription.latest_invoice, null, 2));
+    //console.log(JSON.stringify(subscription, null, 2));
 
     // TODO !!!
     const subscriptionSecondaryQuantity =
@@ -127,8 +125,12 @@ export class StripeService {
     }
   }
 
-  getSubscription(subscriptionId: string) {
-    return this.stripe.subscriptions.retrieve(subscriptionId, {
+  loadSubscription(subscriptionId: string) {
+    return this.stripe.subscriptions.retrieve(subscriptionId);
+  }
+
+  getSubscriptionInvoices(subscriptionId: string) {
+    return this.stripe.invoices.retrieve(subscriptionId, {
       expand: ['latest_invoice.payment_intent'],
     });
   }
@@ -164,14 +166,20 @@ export class StripeService {
   private async decreaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
-  ) {    
-    const timestamp = this.getCurrentTimeStamp();
+  ) {
+    const graceTimestamp =
+      this.getCurrentTimeStamp() -
+      this.config.subscription.gracePeriodInSeconds;
+    const refundableInvoices = await this.loadSubscriptionInvoices(
+      subscription.id,
+      graceTimestamp
+    );
+
     const subscriptionSecondaryQuantity =
       this.getSubscriptionSecondaryQuantity(subscription);
     const quantityDiff = subscriptionSecondaryQuantity - newQuantity;
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
-    const latestInvoice = this.getSubscriptionLatestInvoice(subscription);
     await this.stripe.subscriptions.update(subscription.id, {
       items: [
         {
@@ -182,22 +190,30 @@ export class StripeService {
       ],
       proration_behavior: 'none',
     });
-    const refundableAmount = this.getInvoiceRefundableAmount(
-      latestInvoice,
-      timestamp,
-      this.config.subscription.gracePeriodInSeconds,
-      quantityDiff
+    const refundAmount = quantityDiff * (10 * 100);
+    const refunds = this.getInvoicesRefunds(
+      refundableInvoices.data,
+      refundAmount
     );
-    if (refundableAmount > 0) {
-      await this.refundInvoice(latestInvoice, refundableAmount);
+
+    console.log(
+      `Trying refund. Amount to refund ${refundAmount}. Refund amount available ${
+        refundAmount - refunds.refundLeftover
+      }.`
+    );
+
+    console.log('Refunds', refunds);
+
+    for (const charge of refunds.charges) {
+      await this.refundInvoice(charge.paymentIntentId, charge.amountToRefund);
     }
+
     return { id: '1' };
   }
 
-  private refundInvoice(invoice: Stripe.Invoice, refundAmount: number) {
-    const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+  private refundInvoice(paymentIntentId: string, refundAmount: number) {
     return this.stripe.refunds.create({
-      payment_intent: paymentIntent.id,
+      payment_intent: paymentIntentId,
       amount: refundAmount,
     });
   }
@@ -214,6 +230,18 @@ export class StripeService {
     return subscription.latest_invoice as Stripe.Invoice;
   }
 
+  private loadSubscriptionInvoices(
+    subscriptionId: string,
+    fromTimestamp: number
+  ) {
+    return this.stripe.invoices.list({
+      limit: 100,
+      subscription: subscriptionId,
+      created: { gte: fromTimestamp },
+      expand: ['data.payment_intent'],
+    });
+  }
+
   /**
    * Invoice should have secondary price amount !!!
    * @param invoice
@@ -224,69 +252,67 @@ export class StripeService {
     return secondaryPriceLine.amount / secondaryPriceLine.quantity;
   }
 
-  private getInvoiceRefundableAmount(
-    invoice: Stripe.Invoice,
-    timestamp: number,
-    gracePeriod: number,
-    maxRefundQuantity: number
-  ) {    
-    const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
-    const charges = paymentIntent.charges.data;
-    const previousRefunds = charges.reduce(
-      (acc, v) => [...v.refunds.data, ...acc],
-      [] as Stripe.Refund[]
+  private getInvoicesRefunds(
+    refundableInvoices: Stripe.Invoice[],
+    refundAmount: number
+  ) {
+    const charges = refundableInvoices.reduce(
+      (acc, v) => [
+        ...(v.payment_intent as Stripe.PaymentIntent).charges.data,
+        ...acc,
+      ],
+      [] as Stripe.Charge[]
     );
-    const previousRefundsAmount = previousRefunds.reduce(
-      (acc, v) => acc + v.amount,
-      0
-    );
-    // first line either initial (main) payment, either unused time
-    const potentiallyRefundableLines = invoice.lines.data.slice(1);
-    const refundableItems = potentiallyRefundableLines.filter(
-      (f) => timestamp - f.period.start <= gracePeriod
-    );
-
-    const refundableResult = refundableItems.reduce(
-      (acc, val) => {
-        const previousRefundsAmountLeftover =
-          acc.previousRefundsAmountLeftover - val.amount;
-        if (previousRefundsAmountLeftover >= 0) {
-          // line amount was consumed by previous refunds
-          console.warn(
-            'Line amount was consumed by previous refunds! This is unexpected case for current flows!'
-          );
+    const chargeAmounts = charges.map((charge) => ({
+      paymentIntentId: charge.payment_intent as string,
+      amount: charge.amount,
+      amountRefunded: charge.amount_refunded,
+      amountLeft: charge.amount - charge.amount_refunded,
+    }));
+    // create refunds left based on refundable invoices chares
+    // if chare is not refunded or partially refunded - refund it with calculated amount
+    // and then use next invoice for additional refunds if necessary
+    const refunds = chargeAmounts.reduce(
+      (acc, v) => {
+        if (acc.refundLeftover <= 0) {
+          // everything already covered by previous charges
+          return acc;
+        } else if (v.amountLeft >= acc.refundLeftover) {
+          // charge has enough amount to cover refund
           return {
-            previousRefundsAmountLeftover,
-            refundsAmount: acc.refundsAmount,
-            refundsQuantityLeftover: acc.refundsQuantityLeftover,
+            charges: [
+              ...acc.charges,
+              {
+                paymentIntentId: v.paymentIntentId,
+                amountToRefund: acc.refundLeftover,
+              },
+            ],
+            refundLeftover: 0,
           };
         } else {
-          // ex: 4
-          const availableQuantity = val.quantity;
-          // ex: 4000 / 4 = 1000
-          // TODO !
-          const lineUnitPrice = val.amount / availableQuantity;
-          // ex: 4 >= 1 ? 1 : 4 ~> 1
-          const quantityToRefund =
-            availableQuantity >= acc.refundsQuantityLeftover
-              ? acc.refundsQuantityLeftover
-              : availableQuantity;
-          // 1000 * 1
-          const amount = lineUnitPrice * quantityToRefund;
-          return {
-            previousRefundsAmountLeftover: 0,
-            refundsAmount: acc.refundsAmount + amount,
-            refundsQuantityLeftover:
-              acc.refundsQuantityLeftover - quantityToRefund,
-          };
+          if (v.amountLeft > 0) {
+            // charge has partial amount to cover refund
+            return {
+              charges: [
+                ...acc.charges,
+                {
+                  paymentIntentId: v.paymentIntentId,
+                  amountToRefund: v.amountLeft,
+                },
+              ],
+              refundLeftover: acc.refundLeftover - v.amountLeft,
+            };
+          } else {
+            // charge already refunded
+            return acc;
+          }
         }
       },
       {
-        previousRefundsAmountLeftover: previousRefundsAmount,
-        refundsAmount: 0,
-        refundsQuantityLeftover: maxRefundQuantity,
+        charges: [] as { paymentIntentId: string; amountToRefund: number }[],
+        refundLeftover: refundAmount,
       }
     );
-    return refundableResult.refundsAmount;
+    return refunds;
   }
 }

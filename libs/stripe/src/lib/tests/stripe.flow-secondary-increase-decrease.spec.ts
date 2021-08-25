@@ -6,7 +6,7 @@ const TEST_EMAIL = 'flow_secondary_increase_decrease@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_GRACE_PERIOD = 3 * 24 * 60 * 60;
 
-xdescribe('StripeFlowSecondaryIncreaseDecreaseSubscription', () => {
+describe('StripeFlowSecondaryIncreaseDecreaseSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
