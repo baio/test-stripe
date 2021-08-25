@@ -272,7 +272,7 @@ export class StripeService {
     // create refunds left based on refundable invoices chares
     // if chare is not refunded or partially refunded - refund it with calculated amount
     // and then use next invoice for additional refunds if necessary
-    const refunds = chargeAmounts.reduce(
+    const refunds = chargeAmounts.reduceRight(
       (acc, v) => {
         if (acc.refundLeftover <= 0) {
           // everything already covered by previous charges
