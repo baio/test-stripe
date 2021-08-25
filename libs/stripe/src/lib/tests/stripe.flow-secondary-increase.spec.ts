@@ -1,12 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
-import { addDays, createStripeConfig, getDateTimestamp } from './utils';
+import { createStripeConfig } from './utils';
 
 const TEST_EMAIL = 'flow_secondary_increase@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_GRACE_PERIOD = 3 * 24 * 60 * 60;
 
-describe('StripeFlowSecondaryIncreaseSubscription', () => {
+xdescribe('StripeFlowSecondaryIncreaseSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -65,7 +65,7 @@ describe('StripeFlowSecondaryIncreaseSubscription', () => {
     expect(res.id).toBeDefined();
   });
 
-  it('decrease number of subscriptions to 4', async () => {
+  it('increase number of subscriptions to 4', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       4

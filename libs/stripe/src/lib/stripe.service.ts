@@ -112,6 +112,8 @@ export class StripeService {
     }
     const subscription = await this.getSubscription(subscriptionId);
 
+    console.log(JSON.stringify(subscription.latest_invoice, null, 2));
+
     // TODO !!!
     const subscriptionSecondaryQuantity =
       this.getSubscriptionSecondaryQuantity(subscription);
@@ -162,7 +164,7 @@ export class StripeService {
   private async decreaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
-  ) {
+  ) {    
     const timestamp = this.getCurrentTimeStamp();
     const subscriptionSecondaryQuantity =
       this.getSubscriptionSecondaryQuantity(subscription);
@@ -227,7 +229,7 @@ export class StripeService {
     timestamp: number,
     gracePeriod: number,
     maxRefundQuantity: number
-  ) {
+  ) {    
     const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
     const charges = paymentIntent.charges.data;
     const previousRefunds = charges.reduce(
@@ -238,6 +240,7 @@ export class StripeService {
       (acc, v) => acc + v.amount,
       0
     );
+    // first line either initial (main) payment, either unused time
     const potentiallyRefundableLines = invoice.lines.data.slice(1);
     const refundableItems = potentiallyRefundableLines.filter(
       (f) => timestamp - f.period.start <= gracePeriod
@@ -261,6 +264,7 @@ export class StripeService {
           // ex: 4
           const availableQuantity = val.quantity;
           // ex: 4000 / 4 = 1000
+          // TODO !
           const lineUnitPrice = val.amount / availableQuantity;
           // ex: 4 >= 1 ? 1 : 4 ~> 1
           const quantityToRefund =

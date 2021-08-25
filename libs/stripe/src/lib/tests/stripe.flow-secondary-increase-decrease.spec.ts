@@ -1,12 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
-import { addDays, createStripeConfig, getDateTimestamp } from './utils';
+import { createStripeConfig } from './utils';
 
-const TEST_EMAIL = 'flow_secondary_decrease@gmail.com';
+const TEST_EMAIL = 'flow_secondary_increase_decrease@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_GRACE_PERIOD = 3 * 24 * 60 * 60;
 
-describe('StripeFlowSecondaryDecreaseSubscription', () => {
+xdescribe('StripeFlowSecondaryIncreaseDecreaseSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -49,15 +49,14 @@ describe('StripeFlowSecondaryDecreaseSubscription', () => {
   it('add main monthly subscription', async () => {
     const res = await service.createMainSubscription(
       customerId,
-      SubscriptionPeriod.Month,
-      4
+      SubscriptionPeriod.Month
     );
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
     subscriptionId = res.id;
   });
 
-  it('decrease number of subscriptions', async () => {
+  it('increase number of subscriptions to 3', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       3
@@ -66,32 +65,13 @@ describe('StripeFlowSecondaryDecreaseSubscription', () => {
     expect(res.id).toBeDefined();
   });
 
-  it('decrease number of subscriptions once again', async () => {
-    const res = await service.updateSubscriptionSecondaryQuantity(
-      subscriptionId,
-      2
-    );
-    expect(res).toBeDefined();
-    expect(res.id).toBeDefined();
-  });
-
-  it('decrease number of subscriptions once again after 4 days', async () => {
-    const fourDaysLater = addDays(new Date(), 4);
-    service.setCurrentTimeStamp(getDateTimestamp(fourDaysLater));
+  it('decrease number of subscriptions to 1', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       1
     );
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
-  });
-
-  xit('get subscription', async () => {
-    const res = await service.getSubscription(subscriptionId);
-    expect(res).toBeDefined();
-    expect(res.id).toBeDefined();
-
-    console.log('555', res.items.data[0]);
   });
 
   xit('remove customer', async () => {
