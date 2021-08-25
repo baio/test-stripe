@@ -118,19 +118,10 @@ export class StripeService {
 
     if (subscriptionSecondaryQuantity > count) {
       return this.decreaseSubscriptionSecondaryQuantity(subscription, count);
+    } else if (subscriptionSecondaryQuantity < count) {
+      return this.increaseSubscriptionSecondaryQuantity(subscription, count);
     } else {
-      const itemId = subscription.items.data[0].id;
-      const priceId = subscription.items.data[0].price.id;
-      return this.stripe.subscriptions.update(subscriptionId, {
-        items: [
-          {
-            id: itemId,
-            price: priceId,
-            quantity: count + 1,
-          },
-        ],
-        proration_behavior: 'none',
-      });
+      console.warn('The same subscriptions count, nothing to change');
     }
   }
 
@@ -147,6 +138,24 @@ export class StripeService {
   subscriptionTrialEndNow(subscriptionId: string) {
     return this.stripe.subscriptions.update(subscriptionId, {
       trial_end: 'now',
+    });
+  }
+
+  private async increaseSubscriptionSecondaryQuantity(
+    subscription: Stripe.Subscription,
+    newQuantity: number
+  ) {
+    const itemId = subscription.items.data[0].id;
+    const priceId = subscription.items.data[0].price.id;
+    return this.stripe.subscriptions.update(subscription.id, {
+      items: [
+        {
+          id: itemId,
+          price: priceId,
+          quantity: newQuantity + 1,
+        },
+      ],
+      proration_behavior: 'always_invoice',
     });
   }
 
