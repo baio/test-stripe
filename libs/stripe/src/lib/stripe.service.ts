@@ -174,6 +174,7 @@ export class StripeService {
     const refundableAmount = this.getInvoiceRefundableAmount(
       latestInvoice,
       timestamp,
+      this.config.subscription.gracePeriodInSeconds,
       quantityDiff
     );
     if (refundableAmount > 0) {
@@ -215,6 +216,7 @@ export class StripeService {
   private getInvoiceRefundableAmount(
     invoice: Stripe.Invoice,
     timestamp: number,
+    gracePeriod: number,
     maxRefundQuantity: number
   ) {
     const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
@@ -228,9 +230,8 @@ export class StripeService {
       0
     );
     const potentiallyRefundableLines = invoice.lines.data.slice(1);
-    const threeDaysInSeconds = 3 * 24 * 60 * 60;
     const refundableItems = potentiallyRefundableLines.filter(
-      (f) => timestamp - f.period.start <= threeDaysInSeconds
+      (f) => timestamp - f.period.start <= gracePeriod
     );
 
     const refundableResult = refundableItems.reduce(

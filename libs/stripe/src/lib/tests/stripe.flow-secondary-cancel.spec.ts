@@ -4,6 +4,7 @@ import { createStripeConfig } from './utils';
 
 const TEST_EMAIL = 'flow_secondary_cancel@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
+const TEST_GRACE_PERIOD = 3 * 24 * 60 * 60;
 
 describe('StripeFlowSecondaryCancelSubscription', () => {
   let service: StripeService;
@@ -13,7 +14,13 @@ describe('StripeFlowSecondaryCancelSubscription', () => {
       providers: [
         {
           provide: StripeService,
-          useFactory: () => new StripeService(createStripeConfig()),
+          useFactory: () =>
+            new StripeService(
+              createStripeConfig({
+                gracePeriodInSeconds: TEST_GRACE_PERIOD,
+                trialPeriodInSeconds: 0,
+              })
+            ),
         },
       ],
     }).compile();
@@ -67,7 +74,6 @@ describe('StripeFlowSecondaryCancelSubscription', () => {
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
   });
-
 
   xit('get subscription', async () => {
     const res = await service.getSubscription(subscriptionId);
