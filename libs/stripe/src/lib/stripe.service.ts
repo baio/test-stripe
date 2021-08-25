@@ -37,6 +37,7 @@ export enum SubscriptionPeriod {
 export class StripeService {
   private readonly stripe: Stripe;
   private readonly productsConfig: ProductsConfig;
+  private currentTimeStamp?: number;
 
   constructor(private readonly config: StripeConfig) {
     this.stripe = new Stripe(config.apiKey, { apiVersion: '2020-08-27' });
@@ -57,12 +58,18 @@ export class StripeService {
     return this.stripe.customers.del(id);
   }
 
+  setCurrentTimeStamp(timestamp: number) {
+    this.currentTimeStamp = timestamp;
+  }
+
+  getCurrentTimeStamp() {
+    return this.currentTimeStamp || new Date().getTime() / 1000;
+  }
+
   async setCustomerPaymentMethod(customerId: string, paymentMethodId: string) {
     const res = await this.stripe.paymentMethods.attach(paymentMethodId, {
       customer: customerId,
     });
-
-    console.log('333', res);
 
     return await this.stripe.customers.update(customerId, {
       invoice_settings: {
@@ -110,11 +117,7 @@ export class StripeService {
       this.getSubscriptionSecondaryQuantity(subscription);
 
     if (subscriptionSecondaryQuantity > count) {
-      return this.decreaseSubscriptionSecondaryQuantity(
-        subscription,
-        count,
-        subscriptionSecondaryQuantity - count
-      );
+      return this.decreaseSubscriptionSecondaryQuantity(subscription, count);
     } else {
       const itemId = subscription.items.data[0].id;
       const priceId = subscription.items.data[0].price.id;
@@ -149,9 +152,12 @@ export class StripeService {
 
   private async decreaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
-    newQuantity: number,
-    refundQuantity: number
+    newQuantity: number
   ) {
+    const timestamp = this.getCurrentTimeStamp();
+    const subscriptionSecondaryQuantity =
+      this.getSubscriptionSecondaryQuantity(subscription);
+    const quantityDiff = subscriptionSecondaryQuantity - newQuantity;
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
     const latestInvoice = this.getSubscriptionLatestInvoice(subscription);
@@ -165,15 +171,22 @@ export class StripeService {
       ],
       proration_behavior: 'none',
     });
-    return await this.refundInvoice(latestInvoice, refundQuantity);
+    const refundableAmount = this.getInvoiceRefundableAmount(
+      latestInvoice,
+      timestamp,
+      quantityDiff
+    );
+    if (refundableAmount > 0) {
+      await this.refundInvoice(latestInvoice, refundableAmount);
+    }
+    return { id: '1' };
   }
 
-  private refundInvoice(invoice: Stripe.Invoice, refundQuantity: number) {
-    const priceAmount = this.getInvoiceSecondaryPriceAmount(invoice);
+  private refundInvoice(invoice: Stripe.Invoice, refundAmount: number) {
     const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
     return this.stripe.refunds.create({
       payment_intent: paymentIntent.id,
-      amount: refundQuantity * priceAmount,
+      amount: refundAmount,
     });
   }
 
@@ -197,5 +210,69 @@ export class StripeService {
   private getInvoiceSecondaryPriceAmount(invoice: Stripe.Invoice) {
     const secondaryPriceLine = invoice.lines.data[1];
     return secondaryPriceLine.amount / secondaryPriceLine.quantity;
+  }
+
+  private getInvoiceRefundableAmount(
+    invoice: Stripe.Invoice,
+    timestamp: number,
+    maxRefundQuantity: number
+  ) {
+    const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+    const charges = paymentIntent.charges.data;
+    const previousRefunds = charges.reduce(
+      (acc, v) => [...v.refunds.data, ...acc],
+      [] as Stripe.Refund[]
+    );
+    const previousRefundsAmount = previousRefunds.reduce(
+      (acc, v) => acc + v.amount,
+      0
+    );
+    const potentiallyRefundableLines = invoice.lines.data.slice(1);
+    const threeDaysInSeconds = 3 * 24 * 60 * 60;
+    const refundableItems = potentiallyRefundableLines.filter(
+      (f) => timestamp - f.period.start <= threeDaysInSeconds
+    );
+
+    const refundableResult = refundableItems.reduce(
+      (acc, val) => {
+        const previousRefundsAmountLeftover =
+          acc.previousRefundsAmountLeftover - val.amount;
+        if (previousRefundsAmountLeftover >= 0) {
+          // line amount was consumed by previous refunds
+          console.warn(
+            'Line amount was consumed by previous refunds! This is unexpected case for current flows!'
+          );
+          return {
+            previousRefundsAmountLeftover,
+            refundsAmount: acc.refundsAmount,
+            refundsQuantityLeftover: acc.refundsQuantityLeftover,
+          };
+        } else {
+          // ex: 4
+          const availableQuantity = val.quantity;
+          // ex: 4000 / 4 = 1000
+          const lineUnitPrice = val.amount / availableQuantity;
+          // ex: 4 >= 1 ? 1 : 4 ~> 1
+          const quantityToRefund =
+            availableQuantity >= acc.refundsQuantityLeftover
+              ? acc.refundsQuantityLeftover
+              : availableQuantity;
+          // 1000 * 1
+          const amount = lineUnitPrice * quantityToRefund;
+          return {
+            previousRefundsAmountLeftover: 0,
+            refundsAmount: acc.refundsAmount + amount,
+            refundsQuantityLeftover:
+              acc.refundsQuantityLeftover - quantityToRefund,
+          };
+        }
+      },
+      {
+        previousRefundsAmountLeftover: previousRefundsAmount,
+        refundsAmount: 0,
+        refundsQuantityLeftover: maxRefundQuantity,
+      }
+    );
+    return refundableResult.refundsAmount;
   }
 }
