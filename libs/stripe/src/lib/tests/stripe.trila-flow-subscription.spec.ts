@@ -91,7 +91,7 @@ xdescribe('StripeTrialFlowSubscription', () => {
     console.log('555', res.items.data[0]);
   });
 
-  xit('remove customer', async () => {
+  it('remove customer', async () => {
     const res = await service.removeCustomer(customerId);
     expect(res).toBeDefined();
   });

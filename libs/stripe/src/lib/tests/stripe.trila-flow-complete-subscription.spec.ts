@@ -36,6 +36,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res.id).toBeDefined();
     expect(res.email).toEqual(TEST_EMAIL);
     customerId = res.id;
+    
   });
 
   it('set customer payment method', async () => {
