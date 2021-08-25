@@ -2,11 +2,10 @@ import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
 import { createStripeConfig } from './utils';
 
-const TEST_EMAIL = 'trial_flow_complete_subscription@gmail.com';
+const TEST_EMAIL = 'flow_secondary_cancel@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
-const TEST_TRIAL_PERIOD = 30 * 24 * 60 * 60;
 
-xdescribe('StripeTrialFlowCompleteSubscription', () => {
+describe('StripeFlowSecondaryCancelSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -14,13 +13,7 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
       providers: [
         {
           provide: StripeService,
-          useFactory: () =>
-            new StripeService(
-              createStripeConfig({
-                gracePeriodInSeconds: 0,
-                trialPeriodInSeconds: TEST_TRIAL_PERIOD,
-              })
-            ),
+          useFactory: () => new StripeService(createStripeConfig()),
         },
       ],
     }).compile();
@@ -36,7 +29,6 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
     expect(res.id).toBeDefined();
     expect(res.email).toEqual(TEST_EMAIL);
     customerId = res.id;
-
   });
 
   it('set customer payment method', async () => {
@@ -50,29 +42,34 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
   it('add main monthly subscription', async () => {
     const res = await service.createMainSubscription(
       customerId,
-      SubscriptionPeriod.Month
+      SubscriptionPeriod.Month,
+      4
     );
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
     subscriptionId = res.id;
   });
 
-  it('set 4 secondary locations', async () => {
+  it('decrease number of subscriptions', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
-      4
+      3
     );
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
   });
 
-  it('end trial now', async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    service.subscriptionTrialEndNow(subscriptionId);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  it('decrease number of subscriptions once again', async () => {
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      2
+    );
+    expect(res).toBeDefined();
+    expect(res.id).toBeDefined();
   });
 
-  it('get subscription', async () => {
+
+  xit('get subscription', async () => {
     const res = await service.getSubscription(subscriptionId);
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();

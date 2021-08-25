@@ -71,7 +71,11 @@ export class StripeService {
     });
   }
 
-  createMainSubscription(customerId: string, period: SubscriptionPeriod) {
+  createMainSubscription(
+    customerId: string,
+    period: SubscriptionPeriod,
+    secondaryQuantity = 0
+  ) {
     const trialEnd =
       this.config.subscription.trialPeriodInSeconds !== 0
         ? Math.trunc(
@@ -85,7 +89,7 @@ export class StripeService {
       items: [
         {
           price: this.getMainProductPrice(period),
-          quantity: 1,
+          quantity: 1 + secondaryQuantity,
         },
       ],
     };
@@ -100,21 +104,37 @@ export class StripeService {
       throw new Error('Bad quantity');
     }
     const subscription = await this.getSubscription(subscriptionId);
-    const itemId = subscription.items.data[0].id;
-    const priceId = subscription.items.data[0].price.id;
-    return this.stripe.subscriptions.update(subscriptionId, {
-      items: [
-        {
-          id: itemId,
-          price: priceId,
-          quantity: count + 1,
-        },
-      ],
-    });
+
+    // TODO !!!
+    const subscriptionSecondaryQuantity =
+      this.getSubscriptionSecondaryQuantity(subscription);
+
+    if (subscriptionSecondaryQuantity > count) {
+      return this.decreaseSubscriptionSecondaryQuantity(
+        subscription,
+        count,
+        subscriptionSecondaryQuantity - count
+      );
+    } else {
+      const itemId = subscription.items.data[0].id;
+      const priceId = subscription.items.data[0].price.id;
+      return this.stripe.subscriptions.update(subscriptionId, {
+        items: [
+          {
+            id: itemId,
+            price: priceId,
+            quantity: count + 1,
+          },
+        ],
+        proration_behavior: 'none',
+      });
+    }
   }
 
   getSubscription(subscriptionId: string) {
-    return this.stripe.subscriptions.retrieve(subscriptionId);
+    return this.stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['latest_invoice.payment_intent'],
+    });
   }
 
   getLatestEvents(limit: number) {
@@ -125,5 +145,57 @@ export class StripeService {
     return this.stripe.subscriptions.update(subscriptionId, {
       trial_end: 'now',
     });
+  }
+
+  private async decreaseSubscriptionSecondaryQuantity(
+    subscription: Stripe.Subscription,
+    newQuantity: number,
+    refundQuantity: number
+  ) {
+    const itemId = subscription.items.data[0].id;
+    const priceId = subscription.items.data[0].price.id;
+    const latestInvoice = this.getSubscriptionLatestInvoice(subscription);
+    await this.stripe.subscriptions.update(subscription.id, {
+      items: [
+        {
+          id: itemId,
+          price: priceId,
+          quantity: newQuantity + 1,
+        },
+      ],
+      proration_behavior: 'none',
+    });
+    return await this.refundInvoice(latestInvoice, refundQuantity);
+  }
+
+  private refundInvoice(invoice: Stripe.Invoice, refundQuantity: number) {
+    const priceAmount = this.getInvoiceSecondaryPriceAmount(invoice);
+    const paymentIntent = invoice.payment_intent as Stripe.PaymentIntent;
+    return this.stripe.refunds.create({
+      payment_intent: paymentIntent.id,
+      amount: refundQuantity * priceAmount,
+    });
+  }
+
+  private getSubscriptionItem(subscription: Stripe.Subscription) {
+    return subscription.items.data[0];
+  }
+
+  private getSubscriptionSecondaryQuantity(subscription: Stripe.Subscription) {
+    return this.getSubscriptionItem(subscription).quantity - 1;
+  }
+
+  private getSubscriptionLatestInvoice(subscription: Stripe.Subscription) {
+    return subscription.latest_invoice as Stripe.Invoice;
+  }
+
+  /**
+   * Invoice should have secondary price amount !!!
+   * @param invoice
+   * @returns
+   */
+  private getInvoiceSecondaryPriceAmount(invoice: Stripe.Invoice) {
+    const secondaryPriceLine = invoice.lines.data[1];
+    return secondaryPriceLine.amount / secondaryPriceLine.quantity;
   }
 }
