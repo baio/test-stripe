@@ -110,18 +110,26 @@ export class StripeService {
     }
     const subscription = await this.loadSubscription(subscriptionId);
 
-    //console.log(JSON.stringify(subscription, null, 2));
+    const isTrial =
+      subscription.trial_end &&
+      this.getCurrentTimeStamp() < subscription.trial_end;
 
-    // TODO !!!
-    const subscriptionSecondaryQuantity =
-      this.getSubscriptionSecondaryQuantity(subscription);
-
-    if (subscriptionSecondaryQuantity > count) {
-      return this.decreaseSubscriptionSecondaryQuantity(subscription, count);
-    } else if (subscriptionSecondaryQuantity < count) {
-      return this.increaseSubscriptionSecondaryQuantity(subscription, count);
+    if (isTrial) {
+      console.log('trial subscription update quantity', subscriptionId, count);
+      return this.updateTrialSubscriptionSecondaryQuantity(subscription, count);
     } else {
-      console.warn('The same subscriptions count, nothing to change');
+      const subscriptionSecondaryQuantity =
+        this.getSubscriptionSecondaryQuantity(subscription);
+
+      if (subscriptionSecondaryQuantity > count) {
+        console.log('subscription decrease quantity', subscriptionId, count);
+        return this.decreaseSubscriptionSecondaryQuantity(subscription, count);
+      } else if (subscriptionSecondaryQuantity < count) {
+        console.log('subscription increase quantity', subscriptionId, count);
+        return this.increaseSubscriptionSecondaryQuantity(subscription, count);
+      } else {
+        console.warn('The same subscriptions count, nothing to change');
+      }
     }
   }
 
@@ -142,6 +150,24 @@ export class StripeService {
   subscriptionTrialEndNow(subscriptionId: string) {
     return this.stripe.subscriptions.update(subscriptionId, {
       trial_end: 'now',
+    });
+  }
+
+  private async updateTrialSubscriptionSecondaryQuantity(
+    subscription: Stripe.Subscription,
+    newQuantity: number
+  ) {
+    const itemId = subscription.items.data[0].id;
+    const priceId = subscription.items.data[0].price.id;
+    return this.stripe.subscriptions.update(subscription.id, {
+      items: [
+        {
+          id: itemId,
+          price: priceId,
+          quantity: newQuantity + 1,
+        },
+      ],
+      proration_behavior: 'none',
     });
   }
 

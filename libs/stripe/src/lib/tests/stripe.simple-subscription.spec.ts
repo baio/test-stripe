@@ -36,7 +36,6 @@ xdescribe('StripeSimpleSubscription', () => {
       TEST_PAYMENT_METHOD_ID
     );
     expect(res).toBeDefined();
-    console.log('222', res);
   });
 
   it('add main monthly subscription', async () => {
@@ -44,14 +43,12 @@ xdescribe('StripeSimpleSubscription', () => {
       customerId,
       SubscriptionPeriod.Month
     );
-    console.log('333', res);
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
   });
 
   it('read customer events', async () => {
     const res = await service.getLatestEvents(12);
-    console.log('444', res);
     expect(res).toBeDefined();
     expect(res.data).toHaveLength(12);
   });

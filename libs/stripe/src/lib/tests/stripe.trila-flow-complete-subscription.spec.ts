@@ -6,7 +6,7 @@ const TEST_EMAIL = 'trial_flow_complete_subscription@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_TRIAL_PERIOD = 30 * 24 * 60 * 60;
 
-xdescribe('StripeTrialFlowCompleteSubscription', () => {
+describe('StripeTrialFlowCompleteSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -76,8 +76,6 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
     const res = await service.loadSubscription(subscriptionId);
     expect(res).toBeDefined();
     expect(res.id).toBeDefined();
-
-    console.log('555', res.items.data[0]);
   });
 
   xit('remove customer', async () => {
