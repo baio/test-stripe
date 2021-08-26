@@ -86,7 +86,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     await service.subscriptionTrialEndNow(subscriptionId);
   });
 
-  it('reduce by 1 paid location within grace period A', async () => {
+  it('reduce by 1 paid location within grace period A (same day)', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       3
@@ -94,7 +94,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res).toBeDefined();
   });
 
-  it('reduce by 1 paid location within grace period B', async () => {
+  it('reduce by 1 paid location within grace period B (2 days passed)', async () => {
     service.addCurrentTimeStampDays(1);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
@@ -103,11 +103,29 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res).toBeDefined();
   });
 
-  it('reduce by 1 paid location out of grace period', async () => {
+  it('reduce by 1 paid location out of grace period (4 days passed)', async () => {
     service.addCurrentTimeStampDays(3);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       1
+    );
+    expect(res).toBeDefined();
+  });
+
+  it('increase by 4 paid location (9 days passed)', async () => {
+    service.addCurrentTimeStampDays(5);
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      5
+    );
+    expect(res).toBeDefined();
+  });
+
+  it('increase by 2 paid location (10 days passed)', async () => {
+    service.addCurrentTimeStampDays(1);
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      7
     );
     expect(res).toBeDefined();
   });

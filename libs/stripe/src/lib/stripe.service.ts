@@ -104,10 +104,6 @@ export class StripeService {
     return this.stripe.subscriptions.create(data);
   }
 
-  private getSubscriptionTrialEnd(subscription: Stripe.Subscription) {
-    return subscription.trial_end;
-  }
-
   async updateSubscriptionSecondaryQuantity(
     subscriptionId: string,
     count: number
@@ -117,8 +113,8 @@ export class StripeService {
     }
     const subscription = await this.loadSubscription(subscriptionId);
 
-    const subscriptionTrialEnd = this.getSubscriptionTrialEnd(subscription);
-    console.log('???', subscriptionTrialEnd, this.getCurrentTimeStamp());
+    const subscriptionTrialEnd = subscription.trial_end;
+
     const isTrial =
       subscriptionTrialEnd && this.getCurrentTimeStamp() < subscriptionTrialEnd;
 
@@ -189,12 +185,20 @@ export class StripeService {
   ) {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
+    const metadata = this.currentTimeStamp
+      ? {
+          testTimestamp: this.currentTimeStamp,
+          warning:
+            'There is test current time stamp set for subscription, prorarta will be calculated incorrectly !',
+        }
+      : undefined;
     return this.stripe.subscriptions.update(subscription.id, {
       items: [
         {
           id: itemId,
           price: priceId,
           quantity: newQuantity + 1,
+          metadata,
         },
       ],
       proration_behavior: 'always_invoice',
@@ -205,6 +209,7 @@ export class StripeService {
     subscription: Stripe.Subscription,
     newQuantity: number
   ) {
+    // TODO : for test !
     const graceTimestamp =
       this.getCurrentTimeStamp() -
       this.config.subscription.gracePeriodInSeconds;
