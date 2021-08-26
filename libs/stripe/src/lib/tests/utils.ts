@@ -30,7 +30,12 @@ export const createStripeConfig = (
 export const addDays = (date: Date, days: number) => {
   date.setDate(date.getDate() + days);
   return date;
-}
+};
 
-export const getDateTimestamp = (date: Date) =>
+export const addDaysToNow = (days: number) => addDays(new Date(), days);
+
+export const getDateTimestamp = (date = new Date()) =>
   Math.floor(date.getTime() / 1000);
+
+export const getDateTimestampFromNow = (days: number) =>
+  getDateTimestamp(addDaysToNow(days));

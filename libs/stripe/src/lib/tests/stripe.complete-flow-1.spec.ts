@@ -1,12 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { StripeService, SubscriptionPeriod } from '../stripe.service';
-import { createStripeConfig } from './utils';
+import { createStripeConfig, getDateTimestampFromNow } from './utils';
 
-const TEST_EMAIL = 'trial_flow_complete_subscription@gmail.com';
+const TEST_EMAIL = 'complete_flow_1_subscription@gmail.com';
 const TEST_PAYMENT_METHOD_ID = 'pm_card_us';
 const TEST_TRIAL_PERIOD = 30 * 24 * 60 * 60;
+const TEST_GRACE_PERIOD = 3 * 24 * 60 * 60;
 
-xdescribe('StripeTrialFlowCompleteSubscription', () => {
+describe('StripeTrialFlowCompleteSubscription', () => {
   let service: StripeService;
 
   beforeAll(async () => {
@@ -17,7 +18,7 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
           useFactory: () =>
             new StripeService(
               createStripeConfig({
-                gracePeriodInSeconds: 0,
+                gracePeriodInSeconds: TEST_GRACE_PERIOD,
                 trialPeriodInSeconds: TEST_TRIAL_PERIOD,
               })
             ),
@@ -36,7 +37,6 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
     expect(res.id).toBeDefined();
     expect(res.email).toEqual(TEST_EMAIL);
     customerId = res.id;
-
   });
 
   it('set customer payment method', async () => {
@@ -57,25 +57,59 @@ xdescribe('StripeTrialFlowCompleteSubscription', () => {
     subscriptionId = res.id;
   });
 
+  it('set 5 secondary locations', async () => {
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      5
+    );
+    expect(res).toBeDefined();
+  });
+
+  it('set 3 secondary locations', async () => {
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      3
+    );
+    expect(res).toBeDefined();
+  });
+
   it('set 4 secondary locations', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       4
     );
     expect(res).toBeDefined();
-    expect(res.id).toBeDefined();
   });
 
   it('end trial now', async () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    service.subscriptionTrialEndNow(subscriptionId);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await service.subscriptionTrialEndNow(subscriptionId);
   });
 
-  it('get subscription', async () => {
-    const res = await service.loadSubscription(subscriptionId);
+  it('reduce by 1 paid location within grace period A', async () => {
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      3
+    );
     expect(res).toBeDefined();
-    expect(res.id).toBeDefined();
+  });
+
+  it('reduce by 1 paid location within grace period B', async () => {
+    service.addCurrentTimeStampDays(1);
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      2
+    );
+    expect(res).toBeDefined();
+  });
+
+  it('reduce by 1 paid location out of grace period', async () => {
+    service.addCurrentTimeStampDays(3);
+    const res = await service.updateSubscriptionSecondaryQuantity(
+      subscriptionId,
+      1
+    );
+    expect(res).toBeDefined();
   });
 
   xit('remove customer', async () => {

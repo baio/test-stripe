@@ -33,15 +33,14 @@ export enum SubscriptionPeriod {
   Year,
 }
 
+const getNowTimestamp = () => Math.floor(new Date().getTime() / 1000);
+
 @Injectable()
 export class StripeService {
   private readonly stripe: Stripe;
-  private readonly productsConfig: ProductsConfig;
   private currentTimeStamp?: number;
-
   constructor(private readonly config: StripeConfig) {
     this.stripe = new Stripe(config.apiKey, { apiVersion: '2020-08-27' });
-    this.productsConfig = config.products;
   }
 
   private getMainProductPrice(period: SubscriptionPeriod) {
@@ -62,8 +61,12 @@ export class StripeService {
     this.currentTimeStamp = timestamp;
   }
 
+  addCurrentTimeStampDays(days: number) {
+    this.currentTimeStamp = this.currentTimeStamp + days * 24 * 60 * 60;
+  }
+
   getCurrentTimeStamp() {
-    return this.currentTimeStamp || Math.floor(new Date().getTime() / 1000);
+    return this.currentTimeStamp || getNowTimestamp();
   }
 
   async setCustomerPaymentMethod(customerId: string, paymentMethodId: string) {
@@ -101,6 +104,10 @@ export class StripeService {
     return this.stripe.subscriptions.create(data);
   }
 
+  private getSubscriptionTrialEnd(subscription: Stripe.Subscription) {
+    return subscription.trial_end;
+  }
+
   async updateSubscriptionSecondaryQuantity(
     subscriptionId: string,
     count: number
@@ -110,9 +117,10 @@ export class StripeService {
     }
     const subscription = await this.loadSubscription(subscriptionId);
 
+    const subscriptionTrialEnd = this.getSubscriptionTrialEnd(subscription);
+    console.log('???', subscriptionTrialEnd, this.getCurrentTimeStamp());
     const isTrial =
-      subscription.trial_end &&
-      this.getCurrentTimeStamp() < subscription.trial_end;
+      subscriptionTrialEnd && this.getCurrentTimeStamp() < subscriptionTrialEnd;
 
     if (isTrial) {
       console.log('trial subscription update quantity', subscriptionId, count);
@@ -147,10 +155,14 @@ export class StripeService {
     return this.stripe.events.list({ limit });
   }
 
-  subscriptionTrialEndNow(subscriptionId: string) {
-    return this.stripe.subscriptions.update(subscriptionId, {
-      trial_end: 'now',
-    });
+  async subscriptionTrialEndNow(subscriptionId: string) {
+    const subscription = await this.stripe.subscriptions.update(
+      subscriptionId,
+      {
+        trial_end: 'now',
+      }
+    );
+    this.setCurrentTimeStamp(subscription.trial_end + 1);
   }
 
   private async updateTrialSubscriptionSecondaryQuantity(
@@ -283,10 +295,11 @@ export class StripeService {
     refundAmount: number
   ) {
     const charges = refundableInvoices.reduce(
-      (acc, v) => [
-        ...(v.payment_intent as Stripe.PaymentIntent).charges.data,
-        ...acc,
-      ],
+      (acc, v) =>
+        // payment intent could be null for trial period invoice
+        v.payment_intent
+          ? [...(v.payment_intent as Stripe.PaymentIntent).charges.data, ...acc]
+          : acc,
       [] as Stripe.Charge[]
     );
     const chargeAmounts = charges.map((charge) => ({
