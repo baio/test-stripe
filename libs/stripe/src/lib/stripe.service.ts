@@ -35,10 +35,13 @@ export enum SubscriptionPeriod {
 
 const getNowTimestamp = () => Math.floor(new Date().getTime() / 1000);
 
+const METADATA_TEST_TIMESTAMP_FIELD = 'testTimestamp';
+const METADATA_TEST_TIMESTAMP_WARNING_FIELD = 'testTimestampWarning';
+
 @Injectable()
 export class StripeService {
   private readonly stripe: Stripe;
-  private currentTimeStamp?: number;
+  private currentTestTimeStamp?: number;
   constructor(private readonly config: StripeConfig) {
     this.stripe = new Stripe(config.apiKey, { apiVersion: '2020-08-27' });
   }
@@ -58,15 +61,15 @@ export class StripeService {
   }
 
   setCurrentTimeStamp(timestamp: number) {
-    this.currentTimeStamp = timestamp;
+    this.currentTestTimeStamp = timestamp;
   }
 
   addCurrentTimeStampDays(days: number) {
-    this.currentTimeStamp = this.currentTimeStamp + days * 24 * 60 * 60;
+    this.currentTestTimeStamp = this.currentTestTimeStamp + days * 24 * 60 * 60;
   }
 
   getCurrentTimeStamp() {
-    return this.currentTimeStamp || getNowTimestamp();
+    return this.currentTestTimeStamp || getNowTimestamp();
   }
 
   async setCustomerPaymentMethod(customerId: string, paymentMethodId: string) {
@@ -152,13 +155,21 @@ export class StripeService {
   }
 
   async subscriptionTrialEndNow(subscriptionId: string) {
-    const subscription = await this.stripe.subscriptions.update(
+    const updatedSubscription = await this.stripe.subscriptions.update(
       subscriptionId,
       {
         trial_end: 'now',
       }
     );
-    this.setCurrentTimeStamp(subscription.trial_end + 1);
+
+    // update invoice metadata for test purposes
+    const metadata = this.getTestTimestampMetadata();
+    if (metadata) {
+      const latestInvoiceId = updatedSubscription.latest_invoice as string;
+      this.stripe.invoices.update(latestInvoiceId, { metadata });
+    }
+
+    return updatedSubscription;
   }
 
   private async updateTrialSubscriptionSecondaryQuantity(
@@ -179,43 +190,54 @@ export class StripeService {
     });
   }
 
+  private getTestTimestampMetadata() {
+    return this.currentTestTimeStamp
+      ? {
+          [METADATA_TEST_TIMESTAMP_FIELD]: this.currentTestTimeStamp,
+          [METADATA_TEST_TIMESTAMP_WARNING_FIELD]:
+            'There is test current time stamp set for subscription, prorarta will be calculated incorrectly !',
+        }
+      : undefined;
+  }
+
   private async increaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
   ) {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
-    const metadata = this.currentTimeStamp
-      ? {
-          testTimestamp: this.currentTimeStamp,
-          warning:
-            'There is test current time stamp set for subscription, prorarta will be calculated incorrectly !',
-        }
-      : undefined;
-    return this.stripe.subscriptions.update(subscription.id, {
-      items: [
-        {
-          id: itemId,
-          price: priceId,
-          quantity: newQuantity + 1,
-          metadata,
-        },
-      ],
-      proration_behavior: 'always_invoice',
-    });
+    const updatedSubscription = await this.stripe.subscriptions.update(
+      subscription.id,
+      {
+        items: [
+          {
+            id: itemId,
+            price: priceId,
+            quantity: newQuantity + 1,
+          },
+        ],
+        proration_behavior: 'always_invoice',
+      }
+    );
+
+    // update invoice metadata for test purposes
+    const metadata = this.getTestTimestampMetadata();
+    if (metadata) {
+      const latestInvoiceId = updatedSubscription.latest_invoice as string;
+      this.stripe.invoices.update(latestInvoiceId, { metadata });
+    }
+
+    return updatedSubscription;
   }
 
   private async decreaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
   ) {
-    // TODO : for test !
-    const graceTimestamp =
-      this.getCurrentTimeStamp() -
-      this.config.subscription.gracePeriodInSeconds;
+    const gracePeriod = this.config.subscription.gracePeriodInSeconds;
     const refundableInvoices = await this.loadSubscriptionInvoices(
       subscription.id,
-      graceTimestamp
+      gracePeriod
     );
 
     const subscriptionSecondaryQuantity =
@@ -234,10 +256,7 @@ export class StripeService {
       proration_behavior: 'none',
     });
     const refundAmount = quantityDiff * (10 * 100);
-    const refunds = this.getInvoicesRefunds(
-      refundableInvoices.data,
-      refundAmount
-    );
+    const refunds = this.getInvoicesRefunds(refundableInvoices, refundAmount);
 
     console.log(
       `Trying refund. Amount to refund ${refundAmount}. Refund amount available ${
@@ -273,16 +292,40 @@ export class StripeService {
     return subscription.latest_invoice as Stripe.Invoice;
   }
 
-  private loadSubscriptionInvoices(
+  private async loadSubscriptionInvoices(
     subscriptionId: string,
-    fromTimestamp: number
+    gracePeriod: number
   ) {
-    return this.stripe.invoices.list({
+    // stripe doesn't allow to create invoice for particular date
+    // all invoices and charges will have real dates independent
+    // from current test date timestamp
+
+    // we will select all with real grace period filter and then filter with test date data
+
+    const gracePeriodOffset = getNowTimestamp() - gracePeriod;
+    const result = await this.stripe.invoices.list({
       limit: 100,
       subscription: subscriptionId,
-      created: { gte: fromTimestamp },
+      created: { gte: gracePeriodOffset },
       expand: ['data.payment_intent'],
     });
+
+    const items = result.data;
+
+    if (this.currentTestTimeStamp) {
+      console.warn('Test timestamp set, filter invoices by test timestamp');
+      const graceTestPeriodOffset = this.getCurrentTimeStamp() - gracePeriod;
+      console.log('???', JSON.stringify(items, null, 2));
+      const itemsInTestTimestampPeriod = items.filter(
+        (invoice) =>
+          !invoice.metadata[METADATA_TEST_TIMESTAMP_FIELD] ||
+          +invoice.metadata[METADATA_TEST_TIMESTAMP_FIELD] >=
+            graceTestPeriodOffset
+      );
+      return itemsInTestTimestampPeriod;
+    } else {
+      return items;
+    }
   }
 
   /**
