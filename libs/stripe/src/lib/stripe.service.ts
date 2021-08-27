@@ -1,13 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { Stripe } from 'stripe';
 import {
+  createInvoiceMetadata,
   createSubscriptionActiveQuantityMetadata,
+  getInvoicesRefunds,
+  getInvoiceTestTimestamp,
   getSubscriptionActiveQuantityMetadata,
 } from './stripe.utils';
 
+export interface PriceConfig {
+  id: string;
+  valueInUsd: number;
+}
+
 export interface PricesConfig {
-  monthlyPriceId: string;
-  yearlyPriceId: string;
+  monthlyPrice: PriceConfig;
+  yearlyPrice: PriceConfig;
 }
 
 export interface ProductConfig {
@@ -17,7 +25,6 @@ export interface ProductConfig {
 
 export interface ProductsConfig {
   mainProduct: ProductConfig;
-  locationProduct: ProductConfig;
 }
 
 export interface SubscriptionConfig {
@@ -27,7 +34,6 @@ export interface SubscriptionConfig {
 
 export interface StripeConfig {
   apiKey: string;
-  apiVersion: string;
   products: ProductsConfig;
   subscription: SubscriptionConfig;
 }
@@ -39,8 +45,7 @@ export enum SubscriptionPeriod {
 
 const getNowTimestamp = () => Math.floor(new Date().getTime() / 1000);
 
-const METADATA_TEST_TIMESTAMP_FIELD = 'testTimestamp';
-const METADATA_TEST_TIMESTAMP_WARNING_FIELD = 'testTimestampWarning';
+const UNIT_MULTIPLIER = 100;
 
 @Injectable()
 export class StripeService {
@@ -52,8 +57,8 @@ export class StripeService {
 
   private getMainProductPrice(period: SubscriptionPeriod) {
     return period === SubscriptionPeriod.Month
-      ? this.config.products.mainProduct.prices.monthlyPriceId
-      : this.config.products.mainProduct.prices.yearlyPriceId;
+      ? this.config.products.mainProduct.prices.monthlyPrice.id
+      : this.config.products.mainProduct.prices.yearlyPrice.id;
   }
 
   createCustomer(email: string) {
@@ -171,7 +176,7 @@ export class StripeService {
     );
 
     // update invoice metadata for test purposes
-    const invoiceMetadata = this.getTestTimestampMetadata();
+    const invoiceMetadata = createInvoiceMetadata(this.currentTestTimeStamp);
     if (invoiceMetadata) {
       const latestInvoiceId = updatedSubscription.latest_invoice as string;
       this.stripe.invoices.update(latestInvoiceId, {
@@ -190,8 +195,10 @@ export class StripeService {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
     // on trial subscription we only increase active quantity
+    const activeQuantity =
+      newQuantity >= oldQuantity ? newQuantity : oldQuantity;
     const metadata = createSubscriptionActiveQuantityMetadata(
-      newQuantity >= oldQuantity ? newQuantity : oldQuantity,
+      activeQuantity,
       this.getCurrentTimeStamp()
     );
     return this.stripe.subscriptions.update(subscription.id, {
@@ -205,16 +212,6 @@ export class StripeService {
       proration_behavior: 'none',
       metadata,
     });
-  }
-
-  private getTestTimestampMetadata() {
-    return this.currentTestTimeStamp
-      ? {
-          [METADATA_TEST_TIMESTAMP_FIELD]: this.currentTestTimeStamp,
-          [METADATA_TEST_TIMESTAMP_WARNING_FIELD]:
-            'There is test current time stamp set for subscription, prorarta will be calculated incorrectly !',
-        }
-      : undefined;
   }
 
   private async increaseSubscriptionSecondaryQuantity(
@@ -297,7 +294,7 @@ export class StripeService {
     }
 
     // update invoice metadata for test purposes
-    const invoiceMetadata = this.getTestTimestampMetadata();
+    const invoiceMetadata = createInvoiceMetadata(this.currentTestTimeStamp);
     if (invoiceMetadata) {
       const latestInvoiceId = updatedSubscription.latest_invoice as string;
       this.stripe.invoices.update(latestInvoiceId, {
@@ -318,6 +315,13 @@ export class StripeService {
     return subscriptionActiveSecondaryQuantity;
   }
 
+  private getPriceValue(priceId: string) {
+    return [
+      this.config.products.mainProduct.prices.monthlyPrice,
+      this.config.products.mainProduct.prices.yearlyPrice,
+    ].find((f) => f.id === priceId).valueInUsd;
+  }
+
   private async decreaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
@@ -333,12 +337,15 @@ export class StripeService {
     const quantityDiff = subscriptionSecondaryQuantity - newQuantity;
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
-    const refundAmount = quantityDiff * (10 * 100);
-    const refunds = this.getInvoicesRefunds(refundableInvoices, refundAmount);
+    const priceValue = this.getPriceValue(priceId);
+    const priceAmount = priceValue * UNIT_MULTIPLIER;
+    const refundAmount = quantityDiff * priceAmount;
+    const refunds = getInvoicesRefunds(refundableInvoices, refundAmount);
 
     // decrease active subscription quantity on number of refunds
     // Ex: 2 was refunded and 1 is not, so 1 left uncovered and left in active subscription
-    const refundQuantity = (refundAmount - refunds.refundLeftover) / (10 * 100);
+    const refundQuantity =
+      (refundAmount - refunds.refundLeftover) / priceAmount;
     const subscriptionActiveQuantity =
       this.getSubscriptionSecondaryActiveQuantity(subscription);
     const metadata = createSubscriptionActiveQuantityMetadata(
@@ -413,80 +420,15 @@ export class StripeService {
     if (this.currentTestTimeStamp) {
       console.warn('Test timestamp set, filter invoices by test timestamp');
       const graceTestPeriodOffset = this.getCurrentTimeStamp() - gracePeriod;
-      const itemsInTestTimestampPeriod = items.filter(
-        (invoice) =>
-          !invoice.metadata[METADATA_TEST_TIMESTAMP_FIELD] ||
-          +invoice.metadata[METADATA_TEST_TIMESTAMP_FIELD] >=
-            graceTestPeriodOffset
-      );
+      const itemsInTestTimestampPeriod = items.filter((invoice) => {
+        const invoiceTestTimestamp = getInvoiceTestTimestamp(invoice);
+        return (
+          !invoiceTestTimestamp || invoiceTestTimestamp >= graceTestPeriodOffset
+        );
+      });
       return itemsInTestTimestampPeriod;
     } else {
       return items;
     }
-  }
-
-  private getInvoicesRefunds(
-    refundableInvoices: Stripe.Invoice[],
-    refundAmount: number
-  ) {
-    const charges = refundableInvoices.reduce(
-      (acc, v) =>
-        // payment intent could be null for trial period invoice
-        v.payment_intent
-          ? [...(v.payment_intent as Stripe.PaymentIntent).charges.data, ...acc]
-          : acc,
-      [] as Stripe.Charge[]
-    );
-    const chargeAmounts = charges.map((charge) => ({
-      paymentIntentId: charge.payment_intent as string,
-      amount: charge.amount,
-      amountRefunded: charge.amount_refunded,
-      amountLeft: charge.amount - charge.amount_refunded,
-    }));
-    // create refunds left based on refundable invoices chares
-    // if chare is not refunded or partially refunded - refund it with calculated amount
-    // and then use next invoice for additional refunds if necessary
-    const refunds = chargeAmounts.reduceRight(
-      (acc, v) => {
-        if (acc.refundLeftover <= 0) {
-          // everything already covered by previous charges
-          return acc;
-        } else if (v.amountLeft >= acc.refundLeftover) {
-          // charge has enough amount to cover refund
-          return {
-            charges: [
-              ...acc.charges,
-              {
-                paymentIntentId: v.paymentIntentId,
-                amountToRefund: acc.refundLeftover,
-              },
-            ],
-            refundLeftover: 0,
-          };
-        } else {
-          if (v.amountLeft > 0) {
-            // charge has partial amount to cover refund
-            return {
-              charges: [
-                ...acc.charges,
-                {
-                  paymentIntentId: v.paymentIntentId,
-                  amountToRefund: v.amountLeft,
-                },
-              ],
-              refundLeftover: acc.refundLeftover - v.amountLeft,
-            };
-          } else {
-            // charge already refunded
-            return acc;
-          }
-        }
-      },
-      {
-        charges: [] as { paymentIntentId: string; amountToRefund: number }[],
-        refundLeftover: refundAmount,
-      }
-    );
-    return refunds;
   }
 }
