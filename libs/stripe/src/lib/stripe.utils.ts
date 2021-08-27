@@ -16,11 +16,25 @@ export const createSubscriptionActiveQuantityMetadata = (
 
 export const getSubscriptionActiveQuantityMetadata = (
   subscription: Stripe.Subscription
-) => ({
-  quantity: +subscription.metadata[METADATA_SUBSCRIPTION_ACTIVE_QUANTITY_FIELD],
-  timestamp:
-    +subscription.metadata[METADATA_SUBSCRIPTION_ACTIVE_TIMESTAMP_FIELD],
-});
+) => {
+  const metadataTimestamp =
+    +subscription.metadata[METADATA_SUBSCRIPTION_ACTIVE_TIMESTAMP_FIELD];
+  const metadataExpired = metadataTimestamp < subscription.current_period_start;
+  if (metadataExpired) {
+    return {
+      quantity: subscription.items.data[0].quantity,
+      timestamp: subscription.current_period_start + 1,
+      requiresUpdate: true,
+    };
+  } else {
+    return {
+      quantity:
+        +subscription.metadata[METADATA_SUBSCRIPTION_ACTIVE_QUANTITY_FIELD],
+      timestamp: metadataTimestamp,
+      requiresUpdate: false,
+    };
+  }
+};
 
 const METADATA_TEST_TIMESTAMP_FIELD = 'testTimestamp';
 const METADATA_TEST_TIMESTAMP_WARNING_FIELD = 'testTimestampWarning';

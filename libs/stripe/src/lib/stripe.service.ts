@@ -153,8 +153,31 @@ export class StripeService {
     }
   }
 
-  loadSubscription(subscriptionId: string) {
-    return this.stripe.subscriptions.retrieve(subscriptionId);
+  async loadSubscription(subscriptionId: string) {
+    const subscription = await this.stripe.subscriptions.retrieve(
+      subscriptionId
+    );
+    return this.checkSubscriptionActiveQuantity(subscription);
+  }
+
+  async checkSubscriptionActiveQuantity(subscription: Stripe.Subscription) {
+    const activeQuantityMetadata =
+      getSubscriptionActiveQuantityMetadata(subscription);
+    // Subscription active quantity metadata must be reset for a new period
+    if (activeQuantityMetadata.requiresUpdate) {
+      console.warn(
+        'period has been changed we need update activeQuantityMetadata.'
+      );
+      const metadata = createSubscriptionActiveQuantityMetadata(
+        activeQuantityMetadata.quantity,
+        activeQuantityMetadata.timestamp
+      );
+      return await this.stripe.subscriptions.update(subscription.id, {
+        metadata,
+      });
+    } else {
+      return subscription;
+    }
   }
 
   getSubscriptionInvoices(subscriptionId: string) {
