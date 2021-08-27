@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Stripe } from 'stripe';
-import { getSubscriptionActiveQuantityMetadata } from './stripe.utils';
+import {
+  createSubscriptionActiveQuantityMetadata,
+  getSubscriptionActiveQuantityMetadata,
+} from './stripe.utils';
 
 export interface PricesConfig {
   monthlyPriceId: string;
@@ -95,7 +98,7 @@ export class StripeService {
         ? this.getCurrentTimeStamp() +
           this.config.subscription.trialPeriodInSeconds
         : undefined;
-    const metadata = getSubscriptionActiveQuantityMetadata(
+    const metadata = createSubscriptionActiveQuantityMetadata(
       secondaryQuantity,
       this.getCurrentTimeStamp()
     );
@@ -168,10 +171,12 @@ export class StripeService {
     );
 
     // update invoice metadata for test purposes
-    const metadata = this.getTestTimestampMetadata();
-    if (metadata) {
+    const invoiceMetadata = this.getTestTimestampMetadata();
+    if (invoiceMetadata) {
       const latestInvoiceId = updatedSubscription.latest_invoice as string;
-      this.stripe.invoices.update(latestInvoiceId, { metadata });
+      this.stripe.invoices.update(latestInvoiceId, {
+        metadata: invoiceMetadata,
+      });
     }
 
     return updatedSubscription;
@@ -185,7 +190,7 @@ export class StripeService {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
     // on trial subscription we only increase active quantity
-    const metadata = getSubscriptionActiveQuantityMetadata(
+    const metadata = createSubscriptionActiveQuantityMetadata(
       newQuantity >= oldQuantity ? newQuantity : oldQuantity,
       this.getCurrentTimeStamp()
     );
@@ -219,7 +224,7 @@ export class StripeService {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
     // when increase subscriptions quantity always set active subscriptions to new quantity
-    const subscriptionMetadata = getSubscriptionActiveQuantityMetadata(
+    const subscriptionMetadata = createSubscriptionActiveQuantityMetadata(
       newQuantity,
       this.getCurrentTimeStamp()
     );
@@ -271,8 +276,13 @@ export class StripeService {
     // decrease active subscription quantity on number of refunds
     // Ex: 2 was refunded and 1 is not, so 1 left uncovered and left in active subscription
     const refundQuantity = (refundAmount - refunds.refundLeftover) / (10 * 100);
-    const metadata = getSubscriptionActiveQuantityMetadata(
-      subscriptionSecondaryQuantity - refundQuantity,
+    // TODO
+    const subscriptionActiveQuantityMetadata =
+      getSubscriptionActiveQuantityMetadata(subscription);
+    const subscriptionActiveSecondaryQuantity =
+      subscriptionActiveQuantityMetadata.quantity;
+    const metadata = createSubscriptionActiveQuantityMetadata(
+      subscriptionActiveSecondaryQuantity - refundQuantity,
       this.getCurrentTimeStamp()
     );
     const updatedSubscription = await this.stripe.subscriptions.update(
@@ -320,10 +330,6 @@ export class StripeService {
     return this.getSubscriptionItem(subscription).quantity - 1;
   }
 
-  private getSubscriptionLatestInvoice(subscription: Stripe.Subscription) {
-    return subscription.latest_invoice as Stripe.Invoice;
-  }
-
   private async loadSubscriptionInvoices(
     subscriptionId: string,
     gracePeriod: number
@@ -357,16 +363,6 @@ export class StripeService {
     } else {
       return items;
     }
-  }
-
-  /**
-   * Invoice should have secondary price amount !!!
-   * @param invoice
-   * @returns
-   */
-  private getInvoiceSecondaryPriceAmount(invoice: Stripe.Invoice) {
-    const secondaryPriceLine = invoice.lines.data[1];
-    return secondaryPriceLine.amount / secondaryPriceLine.quantity;
   }
 
   private getInvoicesRefunds(
