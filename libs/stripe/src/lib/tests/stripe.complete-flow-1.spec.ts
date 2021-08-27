@@ -115,16 +115,16 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res).toBeDefined();
   });
 
-  it('increase by 2 paid location (9 days passed) [4 / 3]', async () => {
+  it('increase by 4 paid location (9 days passed) [5 / 5]', async () => {
     service.addCurrentTimeStampDays(5);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
-      3
+      5
     );
     expect(res).toBeDefined();
   });
 
-  it('increase by 4 paid location (10 days passed) [8 / 7]', async () => {
+  it('increase by 2 paid location (10 days passed) [7 / 7]', async () => {
     service.addCurrentTimeStampDays(1);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
@@ -133,7 +133,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res).toBeDefined();
   });
 
-  it('decrease by 3 paid location (10 days passed, same day) [5 / 4]', async () => {
+  it('decrease by 3 paid location (10 days passed, same day) [4 / 4]', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       4
@@ -141,8 +141,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res).toBeDefined();
   });
 
-  it('decrease by 3 paid location (13 days passed) [3 / 1]', async () => {
-    service.addCurrentTimeStampDays(3);
+  it('decrease by 3 paid location (10 days passed, same day) [2 / 1]', async () => {
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       1
@@ -150,7 +149,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
     expect(res).toBeDefined();
   });
 
-  it('decrease by 1 paid location (17 days passed) [3 / 0]', async () => {
+  it('decrease by 1 paid location (14 days passed) [2 / 0]', async () => {
     service.addCurrentTimeStampDays(4);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,

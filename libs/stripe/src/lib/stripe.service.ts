@@ -223,25 +223,78 @@ export class StripeService {
   ) {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
-    // when increase subscriptions quantity always set active subscriptions to new quantity
+    const subscriptionQuantity =
+      this.getSubscriptionSecondaryQuantity(subscription);
+
+    const subscriptionActiveQuantity =
+      this.getSubscriptionSecondaryActiveQuantity(subscription);
+
+    const activeSubscriptionsExcess =
+      subscriptionActiveQuantity - subscriptionQuantity;
+
     const subscriptionMetadata = createSubscriptionActiveQuantityMetadata(
       newQuantity,
       this.getCurrentTimeStamp()
     );
-    const updatedSubscription = await this.stripe.subscriptions.update(
-      subscription.id,
-      {
-        items: [
+
+    let updatedSubscription: Stripe.Subscription;
+    if (activeSubscriptionsExcess > 0) {
+      console.log(
+        `There is ${activeSubscriptionsExcess} excess of active subscriptions`
+      );
+      if (newQuantity > activeSubscriptionsExcess) {
+        const invoicableQuantity = newQuantity - activeSubscriptionsExcess;
+        console.log(
+          `New quantity [${newQuantity}] is more than excess quantity [${activeSubscriptionsExcess}], first we will invoice ${invoicableQuantity} and then we will just increase subscription to requested quantity without charges`
+        );
+        updatedSubscription = await this.stripe.subscriptions.update(
+          subscription.id,
           {
-            id: itemId,
-            price: priceId,
-            quantity: newQuantity + 1,
-          },
-        ],
-        proration_behavior: 'always_invoice',
-        metadata: subscriptionMetadata,
+            items: [
+              {
+                id: itemId,
+                price: priceId,
+                quantity: invoicableQuantity + 1,
+              },
+            ],
+            proration_behavior: 'always_invoice',
+          }
+        );
+      } else {
+        console.log(
+          `New quantity [${newQuantity}] is less or equal than excess quantity [${activeSubscriptionsExcess}], we will just increase subscription to requested quantity without charges`
+        );
       }
-    );
+      updatedSubscription = await this.stripe.subscriptions.update(
+        subscription.id,
+        {
+          items: [
+            {
+              id: itemId,
+              price: priceId,
+              quantity: newQuantity + 1,
+            },
+          ],
+          proration_behavior: 'none',
+          metadata: subscriptionMetadata,
+        }
+      );
+    } else {
+      updatedSubscription = await this.stripe.subscriptions.update(
+        subscription.id,
+        {
+          items: [
+            {
+              id: itemId,
+              price: priceId,
+              quantity: newQuantity + 1,
+            },
+          ],
+          proration_behavior: 'always_invoice',
+          metadata: subscriptionMetadata,
+        }
+      );
+    }
 
     // update invoice metadata for test purposes
     const invoiceMetadata = this.getTestTimestampMetadata();
@@ -253,6 +306,16 @@ export class StripeService {
     }
 
     return updatedSubscription;
+  }
+
+  private getSubscriptionSecondaryActiveQuantity(
+    subscription: Stripe.Subscription
+  ) {
+    const subscriptionActiveQuantityMetadata =
+      getSubscriptionActiveQuantityMetadata(subscription);
+    const subscriptionActiveSecondaryQuantity =
+      subscriptionActiveQuantityMetadata.quantity;
+    return subscriptionActiveSecondaryQuantity;
   }
 
   private async decreaseSubscriptionSecondaryQuantity(
@@ -276,13 +339,10 @@ export class StripeService {
     // decrease active subscription quantity on number of refunds
     // Ex: 2 was refunded and 1 is not, so 1 left uncovered and left in active subscription
     const refundQuantity = (refundAmount - refunds.refundLeftover) / (10 * 100);
-    // TODO
-    const subscriptionActiveQuantityMetadata =
-      getSubscriptionActiveQuantityMetadata(subscription);
-    const subscriptionActiveSecondaryQuantity =
-      subscriptionActiveQuantityMetadata.quantity;
+    const subscriptionActiveQuantity =
+      this.getSubscriptionSecondaryActiveQuantity(subscription);
     const metadata = createSubscriptionActiveQuantityMetadata(
-      subscriptionActiveSecondaryQuantity - refundQuantity,
+      subscriptionActiveQuantity - refundQuantity,
       this.getCurrentTimeStamp()
     );
     const updatedSubscription = await this.stripe.subscriptions.update(
