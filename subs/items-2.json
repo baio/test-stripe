@@ -1,0 +1,68 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "si_K74IiIoOdttL9o",
+      "object": "subscription_item",
+      "billing_thresholds": null,
+      "created": 1630013475,
+      "metadata": {
+        "testTimestamp": "1633469476",
+        "testTimestampWarning": "There is test current time stamp set for subscription, prorarta will be calculated incorrectly !"
+      },
+      "plan": {
+        "id": "price_0JRyThdOpWxwtH1jfrJ6IinA",
+        "object": "plan",
+        "active": true,
+        "aggregate_usage": null,
+        "amount": null,
+        "amount_decimal": null,
+        "billing_scheme": "tiered",
+        "created": 1629807101,
+        "currency": "usd",
+        "interval": "month",
+        "interval_count": 1,
+        "livemode": false,
+        "metadata": {},
+        "nickname": null,
+        "product": "prod_K6ApfX0ddUPZHq",
+        "tiers_mode": "graduated",
+        "transform_usage": null,
+        "trial_period_days": null,
+        "usage_type": "licensed"
+      },
+      "price": {
+        "id": "price_0JRyThdOpWxwtH1jfrJ6IinA",
+        "object": "price",
+        "active": true,
+        "billing_scheme": "tiered",
+        "created": 1629807101,
+        "currency": "usd",
+        "livemode": false,
+        "lookup_key": null,
+        "metadata": {},
+        "nickname": null,
+        "product": "prod_K6ApfX0ddUPZHq",
+        "recurring": {
+          "aggregate_usage": null,
+          "interval": "month",
+          "interval_count": 1,
+          "trial_period_days": null,
+          "usage_type": "licensed"
+        },
+        "tax_behavior": "unspecified",
+        "tiers_mode": "graduated",
+        "transform_quantity": null,
+        "type": "recurring",
+        "unit_amount": null,
+        "unit_amount_decimal": null
+      },
+      "quantity": 5,
+      "subscription": "sub_K74I3bIrfBl4bD",
+      "tax_rates": []
+    }
+  ],
+  "has_more": false,
+  "total_count": 1,
+  "url": "/v1/subscription_items?subscription=sub_K74I3bIrfBl4bD"
+}

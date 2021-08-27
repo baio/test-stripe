@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Stripe } from 'stripe';
+import {
+  createSubscriptionActiveQuantityMetadata,
+  getSubscriptionActiveQuantityMetadata,
+} from './stripe.utils';
 
 export interface PricesConfig {
   monthlyPriceId: string;
@@ -35,10 +39,13 @@ export enum SubscriptionPeriod {
 
 const getNowTimestamp = () => Math.floor(new Date().getTime() / 1000);
 
+const METADATA_TEST_TIMESTAMP_FIELD = 'testTimestamp';
+const METADATA_TEST_TIMESTAMP_WARNING_FIELD = 'testTimestampWarning';
+
 @Injectable()
 export class StripeService {
   private readonly stripe: Stripe;
-  private currentTimeStamp?: number;
+  private currentTestTimeStamp?: number;
   constructor(private readonly config: StripeConfig) {
     this.stripe = new Stripe(config.apiKey, { apiVersion: '2020-08-27' });
   }
@@ -58,15 +65,15 @@ export class StripeService {
   }
 
   setCurrentTimeStamp(timestamp: number) {
-    this.currentTimeStamp = timestamp;
+    this.currentTestTimeStamp = timestamp;
   }
 
   addCurrentTimeStampDays(days: number) {
-    this.currentTimeStamp = this.currentTimeStamp + days * 24 * 60 * 60;
+    this.currentTestTimeStamp = this.currentTestTimeStamp + days * 24 * 60 * 60;
   }
 
   getCurrentTimeStamp() {
-    return this.currentTimeStamp || getNowTimestamp();
+    return this.currentTestTimeStamp || getNowTimestamp();
   }
 
   async setCustomerPaymentMethod(customerId: string, paymentMethodId: string) {
@@ -91,6 +98,10 @@ export class StripeService {
         ? this.getCurrentTimeStamp() +
           this.config.subscription.trialPeriodInSeconds
         : undefined;
+    const metadata = createSubscriptionActiveQuantityMetadata(
+      secondaryQuantity,
+      this.getCurrentTimeStamp()
+    );
     const data: Stripe.SubscriptionCreateParams = {
       trial_end: trialEnd,
       customer: customerId,
@@ -100,6 +111,7 @@ export class StripeService {
           quantity: 1 + secondaryQuantity,
         },
       ],
+      metadata,
     };
     return this.stripe.subscriptions.create(data);
   }
@@ -124,7 +136,6 @@ export class StripeService {
     } else {
       const subscriptionSecondaryQuantity =
         this.getSubscriptionSecondaryQuantity(subscription);
-
       if (subscriptionSecondaryQuantity > count) {
         console.log('subscription decrease quantity', subscriptionId, count);
         return this.decreaseSubscriptionSecondaryQuantity(subscription, count);
@@ -152,21 +163,37 @@ export class StripeService {
   }
 
   async subscriptionTrialEndNow(subscriptionId: string) {
-    const subscription = await this.stripe.subscriptions.update(
+    const updatedSubscription = await this.stripe.subscriptions.update(
       subscriptionId,
       {
         trial_end: 'now',
       }
     );
-    this.setCurrentTimeStamp(subscription.trial_end + 1);
+
+    // update invoice metadata for test purposes
+    const invoiceMetadata = this.getTestTimestampMetadata();
+    if (invoiceMetadata) {
+      const latestInvoiceId = updatedSubscription.latest_invoice as string;
+      this.stripe.invoices.update(latestInvoiceId, {
+        metadata: invoiceMetadata,
+      });
+    }
+
+    return updatedSubscription;
   }
 
   private async updateTrialSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
   ) {
+    const oldQuantity = this.getSubscriptionSecondaryQuantity(subscription);
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
+    // on trial subscription we only increase active quantity
+    const metadata = createSubscriptionActiveQuantityMetadata(
+      newQuantity >= oldQuantity ? newQuantity : oldQuantity,
+      this.getCurrentTimeStamp()
+    );
     return this.stripe.subscriptions.update(subscription.id, {
       items: [
         {
@@ -176,7 +203,18 @@ export class StripeService {
         },
       ],
       proration_behavior: 'none',
+      metadata,
     });
+  }
+
+  private getTestTimestampMetadata() {
+    return this.currentTestTimeStamp
+      ? {
+          [METADATA_TEST_TIMESTAMP_FIELD]: this.currentTestTimeStamp,
+          [METADATA_TEST_TIMESTAMP_WARNING_FIELD]:
+            'There is test current time stamp set for subscription, prorarta will be calculated incorrectly !',
+        }
+      : undefined;
   }
 
   private async increaseSubscriptionSecondaryQuantity(
@@ -185,37 +223,109 @@ export class StripeService {
   ) {
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
-    const metadata = this.currentTimeStamp
-      ? {
-          testTimestamp: this.currentTimeStamp,
-          warning:
-            'There is test current time stamp set for subscription, prorarta will be calculated incorrectly !',
-        }
-      : undefined;
-    return this.stripe.subscriptions.update(subscription.id, {
-      items: [
+    const subscriptionQuantity =
+      this.getSubscriptionSecondaryQuantity(subscription);
+
+    const subscriptionActiveQuantity =
+      this.getSubscriptionSecondaryActiveQuantity(subscription);
+
+    const activeSubscriptionsExcess =
+      subscriptionActiveQuantity - subscriptionQuantity;
+
+    const subscriptionMetadata = createSubscriptionActiveQuantityMetadata(
+      newQuantity,
+      this.getCurrentTimeStamp()
+    );
+
+    let updatedSubscription: Stripe.Subscription;
+    if (activeSubscriptionsExcess > 0) {
+      console.log(
+        `There is ${activeSubscriptionsExcess} excess of active subscriptions`
+      );
+      if (newQuantity > activeSubscriptionsExcess) {
+        const invoicableQuantity = newQuantity - activeSubscriptionsExcess;
+        console.log(
+          `New quantity [${newQuantity}] is more than excess quantity [${activeSubscriptionsExcess}], first we will invoice ${invoicableQuantity} and then we will just increase subscription to requested quantity without charges`
+        );
+        updatedSubscription = await this.stripe.subscriptions.update(
+          subscription.id,
+          {
+            items: [
+              {
+                id: itemId,
+                price: priceId,
+                quantity: invoicableQuantity + 1,
+              },
+            ],
+            proration_behavior: 'always_invoice',
+          }
+        );
+      } else {
+        console.log(
+          `New quantity [${newQuantity}] is less or equal than excess quantity [${activeSubscriptionsExcess}], we will just increase subscription to requested quantity without charges`
+        );
+      }
+      updatedSubscription = await this.stripe.subscriptions.update(
+        subscription.id,
         {
-          id: itemId,
-          price: priceId,
-          quantity: newQuantity + 1,
-          metadata,
-        },
-      ],
-      proration_behavior: 'always_invoice',
-    });
+          items: [
+            {
+              id: itemId,
+              price: priceId,
+              quantity: newQuantity + 1,
+            },
+          ],
+          proration_behavior: 'none',
+          metadata: subscriptionMetadata,
+        }
+      );
+    } else {
+      updatedSubscription = await this.stripe.subscriptions.update(
+        subscription.id,
+        {
+          items: [
+            {
+              id: itemId,
+              price: priceId,
+              quantity: newQuantity + 1,
+            },
+          ],
+          proration_behavior: 'always_invoice',
+          metadata: subscriptionMetadata,
+        }
+      );
+    }
+
+    // update invoice metadata for test purposes
+    const invoiceMetadata = this.getTestTimestampMetadata();
+    if (invoiceMetadata) {
+      const latestInvoiceId = updatedSubscription.latest_invoice as string;
+      this.stripe.invoices.update(latestInvoiceId, {
+        metadata: invoiceMetadata,
+      });
+    }
+
+    return updatedSubscription;
+  }
+
+  private getSubscriptionSecondaryActiveQuantity(
+    subscription: Stripe.Subscription
+  ) {
+    const subscriptionActiveQuantityMetadata =
+      getSubscriptionActiveQuantityMetadata(subscription);
+    const subscriptionActiveSecondaryQuantity =
+      subscriptionActiveQuantityMetadata.quantity;
+    return subscriptionActiveSecondaryQuantity;
   }
 
   private async decreaseSubscriptionSecondaryQuantity(
     subscription: Stripe.Subscription,
     newQuantity: number
   ) {
-    // TODO : for test !
-    const graceTimestamp =
-      this.getCurrentTimeStamp() -
-      this.config.subscription.gracePeriodInSeconds;
+    const gracePeriod = this.config.subscription.gracePeriodInSeconds;
     const refundableInvoices = await this.loadSubscriptionInvoices(
       subscription.id,
-      graceTimestamp
+      gracePeriod
     );
 
     const subscriptionSecondaryQuantity =
@@ -223,20 +333,31 @@ export class StripeService {
     const quantityDiff = subscriptionSecondaryQuantity - newQuantity;
     const itemId = subscription.items.data[0].id;
     const priceId = subscription.items.data[0].price.id;
-    await this.stripe.subscriptions.update(subscription.id, {
-      items: [
-        {
-          id: itemId,
-          price: priceId,
-          quantity: newQuantity + 1,
-        },
-      ],
-      proration_behavior: 'none',
-    });
     const refundAmount = quantityDiff * (10 * 100);
-    const refunds = this.getInvoicesRefunds(
-      refundableInvoices.data,
-      refundAmount
+    const refunds = this.getInvoicesRefunds(refundableInvoices, refundAmount);
+
+    // decrease active subscription quantity on number of refunds
+    // Ex: 2 was refunded and 1 is not, so 1 left uncovered and left in active subscription
+    const refundQuantity = (refundAmount - refunds.refundLeftover) / (10 * 100);
+    const subscriptionActiveQuantity =
+      this.getSubscriptionSecondaryActiveQuantity(subscription);
+    const metadata = createSubscriptionActiveQuantityMetadata(
+      subscriptionActiveQuantity - refundQuantity,
+      this.getCurrentTimeStamp()
+    );
+    const updatedSubscription = await this.stripe.subscriptions.update(
+      subscription.id,
+      {
+        items: [
+          {
+            id: itemId,
+            price: priceId,
+            quantity: newQuantity + 1,
+          },
+        ],
+        proration_behavior: 'none',
+        metadata,
+      }
     );
 
     console.log(
@@ -251,7 +372,7 @@ export class StripeService {
       await this.refundInvoice(charge.paymentIntentId, charge.amountToRefund);
     }
 
-    return { id: '1' };
+    return updatedSubscription;
   }
 
   private refundInvoice(paymentIntentId: string, refundAmount: number) {
@@ -269,30 +390,39 @@ export class StripeService {
     return this.getSubscriptionItem(subscription).quantity - 1;
   }
 
-  private getSubscriptionLatestInvoice(subscription: Stripe.Subscription) {
-    return subscription.latest_invoice as Stripe.Invoice;
-  }
-
-  private loadSubscriptionInvoices(
+  private async loadSubscriptionInvoices(
     subscriptionId: string,
-    fromTimestamp: number
+    gracePeriod: number
   ) {
-    return this.stripe.invoices.list({
+    // stripe doesn't allow to create invoice for particular date
+    // all invoices and charges will have real dates independent
+    // from current test date timestamp
+
+    // we will select all with real grace period filter and then filter with test date data
+
+    const gracePeriodOffset = getNowTimestamp() - gracePeriod;
+    const result = await this.stripe.invoices.list({
       limit: 100,
       subscription: subscriptionId,
-      created: { gte: fromTimestamp },
+      created: { gte: gracePeriodOffset },
       expand: ['data.payment_intent'],
     });
-  }
 
-  /**
-   * Invoice should have secondary price amount !!!
-   * @param invoice
-   * @returns
-   */
-  private getInvoiceSecondaryPriceAmount(invoice: Stripe.Invoice) {
-    const secondaryPriceLine = invoice.lines.data[1];
-    return secondaryPriceLine.amount / secondaryPriceLine.quantity;
+    const items = result.data;
+
+    if (this.currentTestTimeStamp) {
+      console.warn('Test timestamp set, filter invoices by test timestamp');
+      const graceTestPeriodOffset = this.getCurrentTimeStamp() - gracePeriod;
+      const itemsInTestTimestampPeriod = items.filter(
+        (invoice) =>
+          !invoice.metadata[METADATA_TEST_TIMESTAMP_FIELD] ||
+          +invoice.metadata[METADATA_TEST_TIMESTAMP_FIELD] >=
+            graceTestPeriodOffset
+      );
+      return itemsInTestTimestampPeriod;
+    } else {
+      return items;
+    }
   }
 
   private getInvoicesRefunds(
