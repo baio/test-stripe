@@ -21,8 +21,17 @@ export const getSubscriptionActiveQuantityMetadata = (
     +subscription.metadata[METADATA_SUBSCRIPTION_ACTIVE_TIMESTAMP_FIELD];
   const metadataExpired = metadataTimestamp < subscription.current_period_start;
   if (metadataExpired) {
+    //console.log(metadataTimestamp, subscription.current_period_start);
+    // reduce quantity by main subscription (1)
+    const quantity = subscription.items.data[0].quantity - 1;
+    console.warn(
+      'subscription active quantity metadata expired, reset it to the current period quantity',
+      metadataTimestamp,
+      subscription.current_period_start,
+      quantity
+    );
     return {
-      quantity: subscription.items.data[0].quantity,
+      quantity,
       timestamp: subscription.current_period_start + 1,
       requiresUpdate: true,
     };
