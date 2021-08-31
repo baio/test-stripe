@@ -85,7 +85,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
 
   it('end trial now [4 / 4]', async () => {
     //await new Promise((resolve) => setTimeout(resolve, 1000));
-    service.setCurrentTimeStamp(getDateTimestampFromNow(30));
+    service.setCurrentTimeStamp(subscriptionId, getDateTimestampFromNow(30));
     await service.subscriptionTrialEndNow(subscriptionId);
   });
 
@@ -98,7 +98,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
   });
 
   it('reduce by 1 paid location within grace period B (1 day passed) [2 / 2]', async () => {
-    service.addCurrentTimeStampDays(1);
+    service.addCurrentTimeStampDays(subscriptionId, 1);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       2
@@ -107,7 +107,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
   });
 
   it('reduce by 1 paid location out of grace period (4 days passed) [2 / 1]', async () => {
-    service.addCurrentTimeStampDays(3);
+    service.addCurrentTimeStampDays(subscriptionId, 3);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       1
@@ -116,7 +116,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
   });
 
   it('increase by 4 paid location (9 days passed) [5 / 5]', async () => {
-    service.addCurrentTimeStampDays(5);
+    service.addCurrentTimeStampDays(subscriptionId, 5);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       5
@@ -125,7 +125,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
   });
 
   it('increase by 2 paid location (10 days passed) [7 / 7]', async () => {
-    service.addCurrentTimeStampDays(1);
+    service.addCurrentTimeStampDays(subscriptionId, 1);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       7
@@ -150,7 +150,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
   });
 
   it('decrease by 1 paid location (14 days passed) [2 / 0]', async () => {
-    service.addCurrentTimeStampDays(4);
+    service.addCurrentTimeStampDays(subscriptionId, 4);
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       0

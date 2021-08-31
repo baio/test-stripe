@@ -50,7 +50,7 @@ const UNIT_MULTIPLIER = 100;
 @Injectable()
 export class StripeService {
   private readonly stripe: Stripe;
-  private currentTestTimeStamp?: number;
+  private currentTestTimeStampHash: { [subscriptionId: string]: number } = {};
   constructor(private readonly config: StripeConfig) {
     this.stripe = new Stripe(config.apiKey, { apiVersion: '2020-08-27' });
   }
@@ -69,16 +69,17 @@ export class StripeService {
     return this.stripe.customers.del(id);
   }
 
-  setCurrentTimeStamp(timestamp: number) {
-    this.currentTestTimeStamp = timestamp;
+  setCurrentTimeStamp(subscriptionId: string, timestamp: number) {
+    this.currentTestTimeStampHash[subscriptionId] = timestamp;
   }
 
-  addCurrentTimeStampDays(days: number) {
-    this.currentTestTimeStamp = this.currentTestTimeStamp + days * 24 * 60 * 60;
+  addCurrentTimeStampDays(subscriptionId: string, days: number) {
+    this.currentTestTimeStampHash[subscriptionId] =
+      this.currentTestTimeStampHash[subscriptionId] + days * 24 * 60 * 60;
   }
 
-  getCurrentTimeStamp() {
-    return this.currentTestTimeStamp || getNowTimestamp();
+  getCurrentTimeStamp(subscriptionId: string) {
+    return this.currentTestTimeStampHash[subscriptionId] || getNowTimestamp();
   }
 
   async setCustomerPaymentMethod(customerId: string, paymentMethodId: string) {
@@ -100,12 +101,11 @@ export class StripeService {
   ) {
     const trialEnd =
       this.config.subscription.trialPeriodInSeconds !== 0
-        ? this.getCurrentTimeStamp() +
-          this.config.subscription.trialPeriodInSeconds
+        ? getNowTimestamp() + this.config.subscription.trialPeriodInSeconds
         : undefined;
     const metadata = createSubscriptionActiveQuantityMetadata(
       secondaryQuantity,
-      this.getCurrentTimeStamp()
+      getNowTimestamp()
     );
     const data: Stripe.SubscriptionCreateParams = {
       trial_end: trialEnd,
@@ -133,7 +133,8 @@ export class StripeService {
     const subscriptionTrialEnd = subscription.trial_end;
 
     const isTrial =
-      subscriptionTrialEnd && this.getCurrentTimeStamp() < subscriptionTrialEnd;
+      subscriptionTrialEnd &&
+      this.getCurrentTimeStamp(subscriptionId) < subscriptionTrialEnd;
 
     if (isTrial) {
       console.log('trial subscription update quantity', subscriptionId, count);
@@ -199,7 +200,9 @@ export class StripeService {
     );
 
     // update invoice metadata for test purposes
-    const invoiceMetadata = createInvoiceMetadata(this.currentTestTimeStamp);
+    const invoiceMetadata = createInvoiceMetadata(
+      this.getCurrentTimeStamp(subscriptionId)
+    );
     if (invoiceMetadata) {
       const latestInvoiceId = updatedSubscription.latest_invoice as string;
       this.stripe.invoices.update(latestInvoiceId, {
@@ -222,7 +225,7 @@ export class StripeService {
       newQuantity >= oldQuantity ? newQuantity : oldQuantity;
     const metadata = createSubscriptionActiveQuantityMetadata(
       activeQuantity,
-      this.getCurrentTimeStamp()
+      this.getCurrentTimeStamp(subscription.id)
     );
     return this.stripe.subscriptions.update(subscription.id, {
       items: [
@@ -254,7 +257,7 @@ export class StripeService {
 
     const subscriptionMetadata = createSubscriptionActiveQuantityMetadata(
       newQuantity,
-      this.getCurrentTimeStamp()
+      this.getCurrentTimeStamp(subscription.id)
     );
 
     let updatedSubscription: Stripe.Subscription;
@@ -317,7 +320,9 @@ export class StripeService {
     }
 
     // update invoice metadata for test purposes
-    const invoiceMetadata = createInvoiceMetadata(this.currentTestTimeStamp);
+    const invoiceMetadata = createInvoiceMetadata(
+      this.getCurrentTimeStamp(subscription.id)
+    );
     if (invoiceMetadata) {
       const latestInvoiceId = updatedSubscription.latest_invoice as string;
       this.stripe.invoices.update(latestInvoiceId, {
@@ -373,7 +378,7 @@ export class StripeService {
       this.getSubscriptionSecondaryActiveQuantity(subscription);
     const metadata = createSubscriptionActiveQuantityMetadata(
       subscriptionActiveQuantity - refundQuantity,
-      this.getCurrentTimeStamp()
+      this.getCurrentTimeStamp(subscription.id)
     );
     const updatedSubscription = await this.stripe.subscriptions.update(
       subscription.id,
@@ -440,9 +445,10 @@ export class StripeService {
 
     const items = result.data;
 
-    if (this.currentTestTimeStamp) {
+    const currentTimestamp = this.getCurrentTimeStamp(subscriptionId);
+    if (currentTimestamp) {
       console.warn('Test timestamp set, filter invoices by test timestamp');
-      const graceTestPeriodOffset = this.getCurrentTimeStamp() - gracePeriod;
+      const graceTestPeriodOffset = currentTimestamp - gracePeriod;
       const itemsInTestTimestampPeriod = items.filter((invoice) => {
         const invoiceTestTimestamp = getInvoiceTestTimestamp(invoice);
         return (
