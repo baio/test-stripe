@@ -99,13 +99,14 @@ export class StripeService {
     period: SubscriptionPeriod,
     secondaryQuantity = 0
   ) {
+    const timestamp = getNowTimestamp();
     const trialEnd =
       this.config.subscription.trialPeriodInSeconds !== 0
-        ? getNowTimestamp() + this.config.subscription.trialPeriodInSeconds
+        ? timestamp + this.config.subscription.trialPeriodInSeconds
         : undefined;
     const metadata = createSubscriptionActiveQuantityMetadata(
       secondaryQuantity,
-      getNowTimestamp()
+      timestamp
     );
     const data: Stripe.SubscriptionCreateParams = {
       trial_end: trialEnd,

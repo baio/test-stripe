@@ -156,6 +156,7 @@ describe('StripeTrialFlowCompleteSubscription', () => {
       0
     );
     expect(res).toBeDefined();
+    
   });
 
   xit('remove customer', async () => {
