@@ -77,7 +77,10 @@ xdescribe('StripeFlowSecondaryDecreaseSubscription', () => {
 
   it('decrease number of subscriptions once again after 4 days', async () => {
     const fourDaysLater = addDays(new Date(), 4);
-    service.setCurrentTimeStamp(getDateTimestamp(fourDaysLater));
+    service.setCurrentTimeStamp(
+      subscriptionId,
+      getDateTimestamp(fourDaysLater)
+    );
     const res = await service.updateSubscriptionSecondaryQuantity(
       subscriptionId,
       1
